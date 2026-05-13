@@ -16,13 +16,5 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.105.4",
     "pg": "^8.20.0"
-  },
-  "description": "",
-  "main": "test-db.js",
-  "directories": {
-    "lib": "lib"
-  },
-  "keywords": [],
-  "author": "",
-  "type": "commonjs"
+  }
 }
