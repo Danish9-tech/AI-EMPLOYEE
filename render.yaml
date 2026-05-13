@@ -3,13 +3,13 @@
 
 services:
   - type: web
-    name: api-server
+    name: ai-employee-api
     env: node
     region: oregon
     plan: free
     rootDir: artifacts/api-server
-    buildCommand: npm install
-    startCommand: npm start
+    buildCommand: npm install --ignore-scripts
+    startCommand: npm run start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
