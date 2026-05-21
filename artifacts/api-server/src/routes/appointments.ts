@@ -6,6 +6,7 @@ import { requireAuth } from "../lib/requireAuth";
 
 const router: IRouter = Router();
 
+// GET all appointments for an assistant
 router.get("/assistants/:assistantId/appointments", requireAuth, async (req, res): Promise<void> => {
   const userId = (req as any).userId as string;
   const rawId = Array.isArray(req.params.assistantId) ? req.params.assistantId[0] : req.params.assistantId;
@@ -15,6 +16,7 @@ router.get("/assistants/:assistantId/appointments", requireAuth, async (req, res
     .select()
     .from(assistantsTable)
     .where(and(eq(assistantsTable.id, assistantId), eq(assistantsTable.userId, userId)));
+
   if (!assistant) {
     res.status(404).json({ error: "Assistant not found" });
     return;
@@ -25,12 +27,25 @@ router.get("/assistants/:assistantId/appointments", requireAuth, async (req, res
     .from(appointmentsTable)
     .where(eq(appointmentsTable.assistantId, assistantId))
     .orderBy(appointmentsTable.scheduledAt);
+
   res.json(appointments);
 });
 
+// CREATE appointment (public - called by chat widget on behalf of customers)
 router.post("/assistants/:assistantId/appointments", async (req, res): Promise<void> => {
   const rawId = Array.isArray(req.params.assistantId) ? req.params.assistantId[0] : req.params.assistantId;
   const assistantId = parseInt(rawId, 10);
+
+  // Verify the assistant exists before creating an appointment
+  const [assistant] = await db
+    .select()
+    .from(assistantsTable)
+    .where(eq(assistantsTable.id, assistantId));
+
+  if (!assistant) {
+    res.status(404).json({ error: "Assistant not found" });
+    return;
+  }
 
   const parsed = CreateAppointmentBody.safeParse(req.body);
   if (!parsed.success) {
@@ -56,9 +71,12 @@ router.post("/assistants/:assistantId/appointments", async (req, res): Promise<v
   res.status(201).json(appointment);
 });
 
+// UPDATE appointment (owner only)
 router.patch("/appointments/:id", requireAuth, async (req, res): Promise<void> => {
+  const userId = (req as any).userId as string;
   const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = UpdateAppointmentParams.safeParse({ id: parseInt(rawId, 10) });
+
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
     return;
@@ -67,6 +85,27 @@ router.patch("/appointments/:id", requireAuth, async (req, res): Promise<void> =
   const parsed = UpdateAppointmentBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  // Verify ownership: appointment must belong to one of user's assistants
+  const [existing] = await db
+    .select({ id: appointmentsTable.id, assistantId: appointmentsTable.assistantId })
+    .from(appointmentsTable)
+    .where(eq(appointmentsTable.id, params.data.id));
+
+  if (!existing) {
+    res.status(404).json({ error: "Appointment not found" });
+    return;
+  }
+
+  const [ownerAssistant] = await db
+    .select()
+    .from(assistantsTable)
+    .where(and(eq(assistantsTable.id, existing.assistantId), eq(assistantsTable.userId, userId)));
+
+  if (!ownerAssistant) {
+    res.status(403).json({ error: "Forbidden" });
     return;
   }
 
@@ -80,10 +119,7 @@ router.patch("/appointments/:id", requireAuth, async (req, res): Promise<void> =
     .set(updateData)
     .where(eq(appointmentsTable.id, params.data.id))
     .returning();
-  if (!appointment) {
-    res.status(404).json({ error: "Appointment not found" });
-    return;
-  }
+
   res.json(appointment);
 });
 
