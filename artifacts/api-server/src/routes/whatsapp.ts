@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
-import { db, subscriptionsTable, assistantsTable, conversationsTable, conversationMessagesTable } from "@workspace/db";
+import { db, subscriptionsTable, assistantsTable, conversationsTable, messagesTable } from "@workspace/db";
 import { requireAuth } from "../lib/requireAuth";
+import { generateAIReply } from "../lib/aiChat";
 
 const router: IRouter = Router();
 
@@ -109,13 +110,26 @@ router.post("/webhooks/whatsapp/:userId", async (req, res) => {
     }
 
     const { entry } = req.body;
-
     if (!entry || !entry[0]?.changes) {
       res.status(200).send("OK");
       return;
     }
 
+    // Find user's assistant (first one)
+    const [assistant] = await db
+      .select()
+      .from(assistantsTable)
+      .where(eq(assistantsTable.userId, userId))
+      .limit(1);
+
+    if (!assistant) {
+      console.log("No assistant found for user, skipping message");
+      res.status(200).send("OK");
+      return;
+    }
+
     const changes = entry[0].changes;
+
     for (const change of changes) {
       if (!change.value?.messages) continue;
 
@@ -124,29 +138,20 @@ router.post("/webhooks/whatsapp/:userId", async (req, res) => {
         const messageText = message.text?.body;
         const messageId = message.id;
 
+        if (!messageText) continue;
+
         console.log(`WhatsApp message from ${from}: ${messageText}`);
-
-        // Find user's assistant (first one)
-        const [assistant] = await db
-          .select()
-          .from(assistantsTable)
-          .where(eq(assistantsTable.userId, userId))
-          .limit(1);
-
-        if (!assistant) {
-          console.log("No assistant found for user, skipping message");
-          res.status(200).send("OK");
-          return;
-        }
 
         // Find or create conversation
         let [conversation] = await db
           .select()
           .from(conversationsTable)
-          .where(and(
-            eq(conversationsTable.phoneNumber, from),
-            eq(conversationsTable.assistantId, assistant.id)
-          ))
+          .where(
+            and(
+              eq(conversationsTable.phoneNumber, from),
+              eq(conversationsTable.assistantId, assistant.id)
+            )
+          )
           .limit(1);
 
         if (!conversation) {
@@ -162,27 +167,31 @@ router.post("/webhooks/whatsapp/:userId", async (req, res) => {
         }
 
         // Save user message
-        await db
-          .insert(conversationMessagesTable)
-          .values({
-            conversationId: conversation.id,
-            role: "user",
-            content: messageText,
-            messageId,
-          });
+        await db.insert(messagesTable).values({
+          conversationId: conversation.id,
+          role: "user",
+          content: messageText,
+          messageId,
+        });
 
-        // TODO: Send to AI and get response, then send via WhatsApp API
-        const aiResponse = "Thanks for your message! Configure your AI assistant to handle responses.";
+        // Generate AI response
+        const aiResponse = await generateAIReply({
+          assistantId: assistant.id,
+          conversationId: conversation.id,
+          businessName: assistant.businessName,
+          description: assistant.description,
+          tone: assistant.tone,
+          userMessage: messageText,
+        });
 
-        await db
-          .insert(conversationMessagesTable)
-          .values({
-            conversationId: conversation.id,
-            role: "assistant",
-            content: aiResponse,
-          });
+        // Save assistant message
+        await db.insert(messagesTable).values({
+          conversationId: conversation.id,
+          role: "assistant",
+          content: aiResponse,
+        });
 
-        // Send response via WhatsApp API (when credentials are provided)
+        // Send response via WhatsApp API
         try {
           await fetch(`https://graph.facebook.com/v21.0/${sub.whatsappPhoneNumberId}/messages`, {
             method: "POST",
