@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db, assistantsTable, conversationsTable, messagesTable } from "@workspace/db";
 import { SendChatMessageBody } from "@workspace/api-zod";
 import { requireAuth } from "../lib/requireAuth";
@@ -8,6 +8,7 @@ import { randomUUID } from "crypto";
 
 const router: IRouter = Router();
 
+// GET all conversations for an assistant (owner only)
 router.get("/assistants/:assistantId/conversations", requireAuth, async (req, res): Promise<void> => {
   const userId = (req as any).userId as string;
   const rawId = Array.isArray(req.params.assistantId) ? req.params.assistantId[0] : req.params.assistantId;
@@ -17,6 +18,7 @@ router.get("/assistants/:assistantId/conversations", requireAuth, async (req, re
     .select()
     .from(assistantsTable)
     .where(and(eq(assistantsTable.id, assistantId), eq(assistantsTable.userId, userId)));
+
   if (!assistant) {
     res.status(404).json({ error: "Assistant not found" });
     return;
@@ -27,20 +29,47 @@ router.get("/assistants/:assistantId/conversations", requireAuth, async (req, re
     .from(conversationsTable)
     .where(eq(conversationsTable.assistantId, assistantId))
     .orderBy(conversationsTable.updatedAt);
+
   res.json(conversations);
 });
 
+// GET messages for a conversation (owner only)
 router.get("/conversations/:conversationId/messages", requireAuth, async (req, res): Promise<void> => {
+  const userId = (req as any).userId as string;
   const rawId = Array.isArray(req.params.conversationId) ? req.params.conversationId[0] : req.params.conversationId;
   const conversationId = parseInt(rawId, 10);
+
+  // Verify ownership: conversation -> assistant -> userId
+  const [conversation] = await db
+    .select({ id: conversationsTable.id, assistantId: conversationsTable.assistantId })
+    .from(conversationsTable)
+    .where(eq(conversationsTable.id, conversationId));
+
+  if (!conversation) {
+    res.status(404).json({ error: "Conversation not found" });
+    return;
+  }
+
+  const [assistant] = await db
+    .select()
+    .from(assistantsTable)
+    .where(and(eq(assistantsTable.id, conversation.assistantId), eq(assistantsTable.userId, userId)));
+
+  if (!assistant) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
   const messages = await db
     .select()
     .from(messagesTable)
     .where(eq(messagesTable.conversationId, conversationId))
     .orderBy(messagesTable.createdAt);
+
   res.json(messages);
 });
 
+// POST new chat message (public - from widget/embed)
 router.post("/chat", async (req, res): Promise<void> => {
   const parsed = SendChatMessageBody.safeParse(req.body);
   if (!parsed.success) {
@@ -55,6 +84,7 @@ router.post("/chat", async (req, res): Promise<void> => {
     .select()
     .from(assistantsTable)
     .where(eq(assistantsTable.id, assistantId));
+
   if (!assistant) {
     res.status(404).json({ error: "Assistant not found" });
     return;
@@ -101,7 +131,7 @@ router.post("/chat", async (req, res): Promise<void> => {
 
   await db
     .update(assistantsTable)
-    .set({ totalMessages: (assistant.totalMessages ?? 0) + 2 })
+    .set({ totalMessages: sql`${assistantsTable.totalMessages} + 2` })
     .where(eq(assistantsTable.id, assistantId));
 
   res.json({ reply, conversationId: conversation.id, sessionId });
