@@ -2,7 +2,6 @@ import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import Stripe from "stripe";
 import { db, subscriptionsTable } from "@workspace/db";
-import { UpdateSubscriptionBody } from "@workspace/api-zod";
 import { requireAuth } from "../lib/requireAuth";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
@@ -55,40 +54,25 @@ async function getOrCreateSubscription(userId: string) {
 
 const router: IRouter = Router();
 
+// GET current subscription (creates free tier if none exists)
 router.get("/subscription", requireAuth, async (req, res): Promise<void> => {
   const userId = (req as any).userId as string;
   const sub = await getOrCreateSubscription(userId);
   res.json(sub);
 });
 
+// GET available plans (public)
 router.get("/subscription/plans", async (req, res): Promise<void> => {
   res.json({
     plans: [
-      {
-        id: "free",
-        name: "Free",
-        price: 0,
-        interval: "month",
-        ...PLAN_LIMITS.free,
-      },
-      {
-        id: "pro",
-        name: "Pro",
-        price: 29,
-        interval: "month",
-        ...PLAN_LIMITS.pro,
-      },
-      {
-        id: "enterprise",
-        name: "Enterprise",
-        price: 99,
-        interval: "month",
-        ...PLAN_LIMITS.enterprise,
-      },
+      { id: "free", name: "Free", price: 0, interval: "month", ...PLAN_LIMITS.free },
+      { id: "pro", name: "Pro", price: 29, interval: "month", ...PLAN_LIMITS.pro },
+      { id: "enterprise", name: "Enterprise", price: 99, interval: "month", ...PLAN_LIMITS.enterprise },
     ],
   });
 });
 
+// POST create Stripe checkout session
 router.post("/subscription/checkout", requireAuth, async (req, res): Promise<void> => {
   const userId = (req as any).userId as string;
   const { plan } = req.body;
@@ -99,25 +83,15 @@ router.post("/subscription/checkout", requireAuth, async (req, res): Promise<voi
   }
 
   try {
-    const sub = await getOrCreateSubscription(userId);
-
+    await getOrCreateSubscription(userId);
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
-      line_items: [
-        {
-          price: PLAN_LIMITS[plan].priceId,
-          quantity: 1,
-        },
-      ],
+      line_items: [{ price: PLAN_LIMITS[plan].priceId, quantity: 1 }],
       success_url: `${process.env.APP_URL || "http://localhost:5173"}/subscription?success=true`,
       cancel_url: `${process.env.APP_URL || "http://localhost:5173"}/subscription?canceled=true`,
-      metadata: {
-        userId,
-        plan,
-      },
+      metadata: { userId, plan },
     });
-
     res.json({ url: session.url, sessionId: session.id });
   } catch (error: any) {
     console.error("Stripe checkout error:", error);
@@ -125,22 +99,20 @@ router.post("/subscription/checkout", requireAuth, async (req, res): Promise<voi
   }
 });
 
+// POST open Stripe billing portal
 router.post("/subscription/portal", requireAuth, async (req, res): Promise<void> => {
   const userId = (req as any).userId as string;
 
   try {
     const sub = await getOrCreateSubscription(userId);
-
     if (!sub.stripeCustomerId) {
-      res.status(400).json({ error: "No active subscription" });
+      res.status(400).json({ error: "No active Stripe subscription. Please subscribe via checkout first." });
       return;
     }
-
     const session = await stripe.billingPortal.sessions.create({
       customer: sub.stripeCustomerId,
       return_url: `${process.env.APP_URL || "http://localhost:5173"}/subscription`,
     });
-
     res.json({ url: session.url });
   } catch (error: any) {
     console.error("Stripe portal error:", error);
@@ -148,16 +120,18 @@ router.post("/subscription/portal", requireAuth, async (req, res): Promise<void>
   }
 });
 
+// POST Stripe webhook - handles payment events
+// NOTE: requires express.raw() body for this path - configured in app.ts
 router.post("/webhooks/stripe", async (req, res): Promise<void> => {
   const sig = req.headers["stripe-signature"] as string;
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
   let event: Stripe.Event;
 
   try {
     if (webhookSecret && sig) {
       event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
     } else {
+      console.warn("STRIPE_WEBHOOK_SECRET not set - skipping signature verification");
       event = req.body as Stripe.Event;
     }
   } catch (err: any) {
@@ -171,34 +145,41 @@ router.post("/webhooks/stripe", async (req, res): Promise<void> => {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const { userId, plan } = session.metadata || {};
-
-        if (userId && plan) {
+        if (userId && plan && PLAN_LIMITS[plan]) {
           const planLimits = PLAN_LIMITS[plan];
           const customerId = session.customer as string;
+          const subscriptionId = session.subscription as string;
+
+          // Get actual period end from Stripe subscription
+          let renewsAt: Date;
+          try {
+            const stripeSub = await stripe.subscriptions.retrieve(subscriptionId);
+            renewsAt = new Date(stripeSub.current_period_end * 1000);
+          } catch {
+            renewsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+          }
 
           await db
             .update(subscriptionsTable)
             .set({
               plan,
-              stripeSubscriptionId: session.subscription as string,
+              status: "active",
+              stripeSubscriptionId: subscriptionId,
               stripeCustomerId: customerId,
               messagesLimit: planLimits.messagesLimit,
               assistantsLimit: planLimits.assistantsLimit,
               leadsLimit: planLimits.leadsLimit,
               features: planLimits.features,
-              renewsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              renewsAt,
             })
             .where(eq(subscriptionsTable.userId, userId));
-
           console.log(`Subscription activated for user ${userId}, plan: ${plan}`);
         }
         break;
       }
-
       case "customer.subscription.updated": {
         const subscription = event.data.object as Stripe.Subscription;
         const customerId = subscription.customer as string;
-
         await db
           .update(subscriptionsTable)
           .set({
@@ -206,70 +187,36 @@ router.post("/webhooks/stripe", async (req, res): Promise<void> => {
             renewsAt: new Date(subscription.current_period_end * 1000),
           })
           .where(eq(subscriptionsTable.stripeCustomerId, customerId));
-
         console.log(`Subscription updated for customer ${customerId}`);
         break;
       }
-
       case "customer.subscription.deleted": {
         const subscription = event.data.object as Stripe.Subscription;
         const customerId = subscription.customer as string;
-
+        const freeLimits = PLAN_LIMITS.free;
         await db
           .update(subscriptionsTable)
           .set({
             plan: "free",
             status: "canceled",
             stripeSubscriptionId: null,
-            ...PLAN_LIMITS.free,
+            messagesLimit: freeLimits.messagesLimit,
+            assistantsLimit: freeLimits.assistantsLimit,
+            leadsLimit: freeLimits.leadsLimit,
+            features: freeLimits.features,
           })
           .where(eq(subscriptionsTable.stripeCustomerId, customerId));
-
         console.log(`Subscription canceled for customer ${customerId}`);
         break;
       }
-
       default:
         console.log(`Unhandled event type: ${event.type}`);
     }
-
     res.json({ received: true });
   } catch (error: any) {
     console.error("Webhook processing error:", error);
     res.status(500).json({ error: "Webhook processing failed" });
   }
-});
-
-router.patch("/subscription", requireAuth, async (req, res): Promise<void> => {
-  const userId = (req as any).userId as string;
-  const parsed = UpdateSubscriptionBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
-
-  const planLimits = PLAN_LIMITS[parsed.data.plan];
-  const renewsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-  const [sub] = await db
-    .update(subscriptionsTable)
-    .set({
-      plan: parsed.data.plan,
-      messagesLimit: planLimits.messagesLimit,
-      assistantsLimit: planLimits.assistantsLimit,
-      leadsLimit: planLimits.leadsLimit,
-      features: planLimits.features,
-      renewsAt,
-    })
-    .where(eq(subscriptionsTable.userId, userId))
-    .returning();
-
-  if (!sub) {
-    const newSub = await getOrCreateSubscription(userId);
-    res.json(newSub);
-    return;
-  }
-  res.json(sub);
 });
 
 export default router;
