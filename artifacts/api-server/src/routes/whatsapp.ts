@@ -142,13 +142,16 @@ router.post("/webhooks/whatsapp/:userId", async (req, res) => {
 
         console.log(`WhatsApp message from ${from}: ${messageText}`);
 
-        // Find or create conversation
+        // Use "whatsapp:{from}:{assistantId}" as a stable sessionId for this contact
+        const sessionId = `whatsapp:${from}:${assistant.id}`;
+
+        // Find or create conversation, keyed by sessionId
         let [conversation] = await db
           .select()
           .from(conversationsTable)
           .where(
             and(
-              eq(conversationsTable.phoneNumber, from),
+              eq(conversationsTable.sessionId, sessionId),
               eq(conversationsTable.assistantId, assistant.id)
             )
           )
@@ -159,9 +162,12 @@ router.post("/webhooks/whatsapp/:userId", async (req, res) => {
             .insert(conversationsTable)
             .values({
               assistantId: assistant.id,
+              sessionId,
+              channel: "whatsapp",
               phoneNumber: from,
               platform: "whatsapp",
               status: "active",
+              messageCount: 0,
             })
             .returning();
         }
@@ -191,7 +197,13 @@ router.post("/webhooks/whatsapp/:userId", async (req, res) => {
           content: aiResponse,
         });
 
-        // Send response via WhatsApp API
+        // Update conversation message count
+        await db
+          .update(conversationsTable)
+          .set({ messageCount: (conversation.messageCount ?? 0) + 2 })
+          .where(eq(conversationsTable.id, conversation.id));
+
+        // Send response via WhatsApp Cloud API
         try {
           await fetch(`https://graph.facebook.com/v21.0/${sub.whatsappPhoneNumberId}/messages`, {
             method: "POST",
