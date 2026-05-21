@@ -90,10 +90,11 @@ router.post("/chat", async (req, res): Promise<void> => {
     return;
   }
 
+  // Scope conversation lookup to both sessionId AND assistantId to avoid cross-assistant collisions
   let [conversation] = await db
     .select()
     .from(conversationsTable)
-    .where(eq(conversationsTable.sessionId, sessionId));
+    .where(and(eq(conversationsTable.sessionId, sessionId), eq(conversationsTable.assistantId, assistantId)));
 
   if (!conversation) {
     [conversation] = await db
