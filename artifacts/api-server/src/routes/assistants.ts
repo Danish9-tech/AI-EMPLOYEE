@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
-import { db, assistantsTable, conversationsTable, leadsTable, appointmentsTable } from "@workspace/db";
+import { eq, and, sql } from "drizzle-orm";
+import { db, assistantsTable, conversationsTable, leadsTable, appointmentsTable, messagesTable } from "@workspace/db";
 import {
   CreateAssistantBody,
   UpdateAssistantBody,
@@ -12,6 +12,7 @@ import { requireAuth } from "../lib/requireAuth";
 
 const router: IRouter = Router();
 
+// GET all assistants for current user
 router.get("/assistants", requireAuth, async (req, res): Promise<void> => {
   const userId = (req as any).userId as string;
   const assistants = await db
@@ -22,6 +23,7 @@ router.get("/assistants", requireAuth, async (req, res): Promise<void> => {
   res.json(assistants);
 });
 
+// CREATE assistant
 router.post("/assistants", requireAuth, async (req, res): Promise<void> => {
   const userId = (req as any).userId as string;
   const parsed = CreateAssistantBody.safeParse(req.body);
@@ -43,6 +45,7 @@ router.post("/assistants", requireAuth, async (req, res): Promise<void> => {
   res.status(201).json(assistant);
 });
 
+// GET single assistant
 router.get("/assistants/:id", requireAuth, async (req, res): Promise<void> => {
   const userId = (req as any).userId as string;
   const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -62,6 +65,7 @@ router.get("/assistants/:id", requireAuth, async (req, res): Promise<void> => {
   res.json(assistant);
 });
 
+// UPDATE assistant
 router.patch("/assistants/:id", requireAuth, async (req, res): Promise<void> => {
   const userId = (req as any).userId as string;
   const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -82,7 +86,6 @@ router.patch("/assistants/:id", requireAuth, async (req, res): Promise<void> => 
   if (parsed.data.tone !== undefined) updateData.tone = parsed.data.tone;
   if (parsed.data.widgetColor !== undefined) updateData.widgetColor = parsed.data.widgetColor;
   if (parsed.data.isActive !== undefined) updateData.isActive = parsed.data.isActive;
-
   const [assistant] = await db
     .update(assistantsTable)
     .set(updateData)
@@ -95,6 +98,7 @@ router.patch("/assistants/:id", requireAuth, async (req, res): Promise<void> => 
   res.json(assistant);
 });
 
+// DELETE assistant
 router.delete("/assistants/:id", requireAuth, async (req, res): Promise<void> => {
   const userId = (req as any).userId as string;
   const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -114,7 +118,7 @@ router.delete("/assistants/:id", requireAuth, async (req, res): Promise<void> =>
   res.sendStatus(204);
 });
 
-// Assistant stats
+// GET assistant stats - all real data from DB
 router.get("/assistants/:assistantId/stats", requireAuth, async (req, res): Promise<void> => {
   const userId = (req as any).userId as string;
   const rawId = Array.isArray(req.params.assistantId) ? req.params.assistantId[0] : req.params.assistantId;
@@ -124,15 +128,25 @@ router.get("/assistants/:assistantId/stats", requireAuth, async (req, res): Prom
     .select()
     .from(assistantsTable)
     .where(and(eq(assistantsTable.id, assistantId), eq(assistantsTable.userId, userId)));
+
   if (!assistant) {
     res.status(404).json({ error: "Assistant not found" });
     return;
   }
 
-  const [conversations, leads, appointments] = await Promise.all([
-    db.select().from(conversationsTable).where(eq(conversationsTable.assistantId, assistantId)),
+  const [conversations, leads, appointments, topQuestionsRows] = await Promise.all([
+    db.select({ id: conversationsTable.id }).from(conversationsTable).where(eq(conversationsTable.assistantId, assistantId)),
     db.select().from(leadsTable).where(eq(leadsTable.assistantId, assistantId)),
-    db.select().from(appointmentsTable).where(eq(appointmentsTable.assistantId, assistantId)),
+    db.select({ id: appointmentsTable.id }).from(appointmentsTable).where(eq(appointmentsTable.assistantId, assistantId)),
+    // Top 4 most common user messages for this assistant
+    db
+      .select({ content: messagesTable.content, count: sql<number>`count(*)` })
+      .from(messagesTable)
+      .innerJoin(conversationsTable, eq(messagesTable.conversationId, conversationsTable.id))
+      .where(and(eq(conversationsTable.assistantId, assistantId), eq(messagesTable.role, "user")))
+      .groupBy(messagesTable.content)
+      .orderBy(sql`count(*) desc`)
+      .limit(4),
   ]);
 
   const leadsByStatus: Record<string, number> = {};
@@ -140,19 +154,15 @@ router.get("/assistants/:assistantId/stats", requireAuth, async (req, res): Prom
     leadsByStatus[lead.status] = (leadsByStatus[lead.status] ?? 0) + 1;
   }
 
+  const topQuestions = topQuestionsRows.map((r) => r.content);
+
   res.json({
     assistantId,
     totalConversations: conversations.length,
     totalMessages: assistant.totalMessages,
     totalLeads: leads.length,
     totalAppointments: appointments.length,
-    avgResponseTime: 1.2,
-    topQuestions: [
-      "What are your business hours?",
-      "What services do you offer?",
-      "How much does it cost?",
-      "How do I book an appointment?",
-    ],
+    topQuestions,
     leadsByStatus,
   });
 });
