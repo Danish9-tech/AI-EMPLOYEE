@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import { ClerkProvider, SignIn, SignUp, useClerk, useAuth } from '@clerk/react';
-import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
 import { Switch, Route, useLocation, Router as WouterRouter } from 'wouter';
 import { queryClient } from "./lib/queryClient";
@@ -21,40 +20,14 @@ import Subscription from "./pages/subscription";
 import Settings from "./pages/settings";
 import { AppLayout } from "./components/layout/app-layout";
 
-const clerkPubKey = publishableKeyFromHost(
-  window.location.hostname,
-  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
-);
-
+const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+const basePath = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
 function stripBase(path: string): string {
   return basePath && path.startsWith(basePath)
     ? path.slice(basePath.length) || "/"
     : path;
-}
-
-if (!clerkPubKey) {
-  // Render a setup instructions page instead of crashing
-  const rootEl = document.getElementById('root')!;
-  rootEl.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0a0f;color:#fff;font-family:Inter,sans-serif;padding:2rem;flex-direction:column;gap:1.5rem;text-align:center">
-      <div style="font-size:3rem">⚙️</div>
-      <h1 style="color:#00d4ff;font-size:1.8rem;font-weight:700;margin:0">AI Employee — Setup Required</h1>
-      <p style="color:#aaa;max-width:500px;line-height:1.6;margin:0">The app is missing its authentication configuration.<br/>The <code style='background:#1a1a2e;padding:2px 6px;border-radius:4px;color:#00d4ff'>VITE_CLERK_PUBLISHABLE_KEY</code> environment variable was not found at build time.</p>
-      <div style="background:#0f1117;border:1px solid #2a2a3e;border-radius:12px;padding:1.5rem;max-width:600px;text-align:left">
-        <p style="color:#00d4ff;font-weight:600;margin:0 0 0.75rem">Fix in Vercel:</p>
-        <ol style="color:#ccc;line-height:2;margin:0;padding-left:1.5rem">
-          <li>Go to your <strong>Vercel project → Settings → Environment Variables</strong></li>
-          <li>Edit <code style='background:#1a1a2e;padding:2px 6px;border-radius:4px;color:#00d4ff'>VITE_CLERK_PUBLISHABLE_KEY</code> and <strong>uncheck Sensitive</strong></li>
-          <li>Add it as a GitHub Actions secret: <code style='background:#1a1a2e;padding:2px 6px;border-radius:4px;color:#00d4ff'>VITE_CLERK_PUBLISHABLE_KEY</code></li>
-          <li>Redeploy from GitHub Actions</li>
-        </ol>
-      </div>
-    </div>
-  `;
-  throw new Error('VITE_CLERK_PUBLISHABLE_KEY not set at build time — see on-screen instructions');
 }
 
 const clerkAppearance = {
@@ -108,16 +81,16 @@ const clerkAppearance = {
 
 function SignInPage() {
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <SignIn routing="path" path="/sign-in" />
     </div>
   );
 }
 
 function SignUpPage() {
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} />
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <SignUp routing="path" path="/sign-up" />
     </div>
   );
 }
@@ -126,7 +99,6 @@ function ClerkQueryClientCacheInvalidator() {
   const { addListener } = useClerk();
   const queryClient = useQueryClient();
   const prevUserIdRef = useRef<string | null | undefined>(undefined);
-
   useEffect(() => {
     const unsubscribe = addListener(({ user }) => {
       const userId = user?.id ?? null;
@@ -140,20 +112,17 @@ function ClerkQueryClientCacheInvalidator() {
     });
     return unsubscribe;
   }, [addListener, queryClient]);
-
   return null;
 }
 
 function HomeRedirect() {
   const [, setLocation] = useLocation();
   const { isSignedIn, isLoaded } = useAuth();
-
   useEffect(() => {
     if (isLoaded && isSignedIn) {
       setLocation("/dashboard");
     }
   }, [isLoaded, isSignedIn, setLocation]);
-
   if (!isLoaded) return null;
   if (isSignedIn) return null;
   return <Landing />;
@@ -162,16 +131,13 @@ function HomeRedirect() {
 function ProtectedRoute({ component: Component }: { component: any }) {
   const [, setLocation] = useLocation();
   const { isSignedIn, isLoaded } = useAuth();
-
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
       setLocation("/");
     }
   }, [isLoaded, isSignedIn, setLocation]);
-
   if (!isLoaded) return null;
   if (!isSignedIn) return null;
-
   return (
     <AppLayout>
       <Component />
@@ -181,12 +147,12 @@ function ProtectedRoute({ component: Component }: { component: any }) {
 
 function ClerkProviderWithRoutes() {
   const [, setLocation] = useLocation();
-
   return (
     <ClerkProvider
       publishableKey={clerkPubKey!}
       proxyUrl={clerkProxyUrl}
       appearance={clerkAppearance}
+      navigate={(to) => setLocation(stripBase(to))}
       routerPush={(to) => setLocation(stripBase(to))}
       routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
     >
@@ -206,7 +172,6 @@ function ClerkProviderWithRoutes() {
         <Route path="/subscription" component={() => <ProtectedRoute component={Subscription} />} />
         <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />
       </Switch>
-      <Toaster />
     </ClerkProvider>
   );
 }
@@ -217,6 +182,7 @@ function App() {
       <WouterRouter base={basePath}>
         <ClerkProviderWithRoutes />
       </WouterRouter>
+      <Toaster />
     </QueryClientProvider>
   );
 }
