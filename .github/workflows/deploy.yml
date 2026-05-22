@@ -23,6 +23,12 @@ jobs:
         with:
           version: 9
 
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Run API codegen
+        run: pnpm --filter @workspace/api-spec run codegen
+
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
