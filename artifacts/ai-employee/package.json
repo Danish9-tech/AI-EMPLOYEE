@@ -79,7 +79,7 @@
     "@clerk/themes": "^2.4.57",
     "@workspace/api-client-react": "workspace:*",
     "@workspace/db": "workspace:*",
-    "@vercel/node": "^5.0.0",
-    "drizzle-orm": "catalog:"
-  }
+    "@vercel/node": "^5.0.0"
+
+    
 }
