@@ -9,9 +9,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./artifacts/ai-employee
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,30 +24,30 @@ jobs:
           version: 9
 
       - name: Install dependencies
-        working-directory: .
-        run: cd ../../ && pnpm install --no-frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Run API codegen
-        working-directory: .
-        run: cd ../../ && pnpm --filter @workspace/api-spec run codegen
+        run: pnpm --filter @workspace/api-spec run codegen
 
       - name: Install Vercel CLI
-        working-directory: .
         run: npm install --global vercel@latest
 
       - name: Pull Vercel Environment Information
+        working-directory: ./artifacts/ai-employee
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
       - name: Build Project Artifacts
+        working-directory: ./artifacts/ai-employee
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
       - name: Deploy Project Artifacts to Vercel
+        working-directory: ./artifacts/ai-employee
         run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
