@@ -13,64 +13,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
-      - name: Pull Vercel Environment (includes sensitive vars)
+      - name: Pull Vercel Environment
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      - name: Export Vercel env vars into GitHub Actions env
-        run: |
-          if [ -f .vercel/.env.production.local ]; then
-            echo "Loading .vercel/.env.production.local into GITHUB_ENV"
-            while IFS= read -r line || [ -n "$line" ]; do
-              # Skip comments and empty lines
-              [[ "$line" =~ ^#.*$ ]] && continue
-              [[ -z "$line" ]] && continue
-              echo "$line" >> $GITHUB_ENV
-            done < .vercel/.env.production.local
-            echo "Env vars loaded."
-          else
-            echo "No .env.production.local found"
-          fi
-
-      - name: Install all workspace dependencies
-        run: pnpm install --no-frozen-lockfile
-
-      - name: Run API codegen
-        run: pnpm --filter @workspace/api-spec run codegen
-
-      - name: Build Vite app with env vars
-        working-directory: ./artifacts/ai-employee
-        run: pnpm run build
-
-      - name: Prepare Vercel output structure
-        run: |
-          mkdir -p .vercel/output/static
-          cp -r artifacts/ai-employee/dist/public/. .vercel/output/static/
-          cat > .vercel/output/config.json << 'EOF'
-          {
-            "version": 3,
-            "routes": [
-              { "src": "/assets/(.*)", "headers": { "cache-control": "public, max-age=31536000, immutable" }, "continue": true },
-              { "handle": "filesystem" },
-              { "src": "/(.*)", "dest": "/index.html" }
-            ]
-          }
-          EOF
+      - name: Build via Vercel (env vars injected automatically)
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
       - name: Deploy prebuilt to Vercel
         run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
