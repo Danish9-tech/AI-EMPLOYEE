@@ -4,8 +4,10 @@
   "outputDirectory": "artifacts/ai-employee/dist/public",
   "installCommand": "pnpm install --no-frozen-lockfile",
   "framework": null,
+  "cleanUrls": true,
+  "trailingSlash": false,
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!assets/)(?!.*\\.).+)", "destination": "/index.html" }
   ]
 }
