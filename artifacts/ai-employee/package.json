@@ -80,6 +80,6 @@
     "@workspace/api-client-react": "workspace:*",
     "@workspace/db": "workspace:*",
     "@vercel/node": "^5.0.0"
-
+  }
     
 }
