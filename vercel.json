@@ -10,63 +10,18 @@
     }
   ],
   "routes": [
-    {
-      "src": "/api/health",
-      "dest": "/api/index.ts"
-    },
-    {
-      "src": "/api/assistants",
-      "methods": ["GET"],
-      "dest": "/api/index.ts"
-    },
-    {
-      "src": "/api/assistants",
-      "methods": ["POST"],
-      "dest": "/api/index.ts"
-    },
-    {
-      "src": "/api/conversations",
-      "dest": "/api/index.ts"
-    },
-    {
-      "src": "/api/leads",
-      "dest": "/api/index.ts"
-    },
-    {
-      "src": "/api/appointments",
-      "dest": "/api/index.ts"
-    },
-    {
-      "src": "/api/subscription",
-      "dest": "/api/index.ts"
-    },
-    {
-      "src": "/api/knowledge",
-      "dest": "/api/index.ts"
-    },
-    {
-      "src": "/api/whatsapp/config",
-      "dest": "/api/index.ts"
-    },
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/index.ts"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/artifacts/ai-employee/dist/public/$1"
-    }
+    { "src": "/api/health", "dest": "/api/index.ts" },
+    { "src": "/api/assistants", "methods": ["GET"], "dest": "/api/index.ts" },
+    { "src": "/api/assistants", "methods": ["POST"], "dest": "/api/index.ts" },
+    { "src": "/api/conversations", "dest": "/api/index.ts" },
+    { "src": "/api/leads", "dest": "/api/index.ts" },
+    { "src": "/api/appointments", "dest": "/api/index.ts" },
+    { "src": "/api/subscription", "dest": "/api/index.ts" },
+    { "src": "/api/knowledge", "dest": "/api/index.ts" },
+    { "src": "/api/whatsapp/config", "dest": "/api/index.ts" },
+    { "src": "/api/(.*)", "dest": "/api/index.ts" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/artifacts/ai-employee/dist/public/$1" }
   ],
-  "env": {
-    "DATABASE_URL": "@database_url",
-    "SUPABASE_URL": "@supabase_url",
-    "SUPABASE_ANON_KEY": "@supabase_anon_key",
-    "CLERK_PUBLISHABLE_KEY": "@clerk_publishable_key",
-    "CLERK_SECRET_KEY": "@clerk_secret_key",
-    "STRIPE_SECRET_KEY": "@stripe_secret_key"
-  },
   "regions": ["iad1"]
 }
