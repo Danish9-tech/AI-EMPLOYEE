@@ -36,7 +36,25 @@ function stripBase(path: string): string {
 }
 
 if (!clerkPubKey) {
-  throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY in .env file');
+  // Render a setup instructions page instead of crashing
+  const rootEl = document.getElementById('root')!;
+  rootEl.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0a0f;color:#fff;font-family:Inter,sans-serif;padding:2rem;flex-direction:column;gap:1.5rem;text-align:center">
+      <div style="font-size:3rem">⚙️</div>
+      <h1 style="color:#00d4ff;font-size:1.8rem;font-weight:700;margin:0">AI Employee — Setup Required</h1>
+      <p style="color:#aaa;max-width:500px;line-height:1.6;margin:0">The app is missing its authentication configuration.<br/>The <code style='background:#1a1a2e;padding:2px 6px;border-radius:4px;color:#00d4ff'>VITE_CLERK_PUBLISHABLE_KEY</code> environment variable was not found at build time.</p>
+      <div style="background:#0f1117;border:1px solid #2a2a3e;border-radius:12px;padding:1.5rem;max-width:600px;text-align:left">
+        <p style="color:#00d4ff;font-weight:600;margin:0 0 0.75rem">Fix in Vercel:</p>
+        <ol style="color:#ccc;line-height:2;margin:0;padding-left:1.5rem">
+          <li>Go to your <strong>Vercel project → Settings → Environment Variables</strong></li>
+          <li>Edit <code style='background:#1a1a2e;padding:2px 6px;border-radius:4px;color:#00d4ff'>VITE_CLERK_PUBLISHABLE_KEY</code> and <strong>uncheck Sensitive</strong></li>
+          <li>Add it as a GitHub Actions secret: <code style='background:#1a1a2e;padding:2px 6px;border-radius:4px;color:#00d4ff'>VITE_CLERK_PUBLISHABLE_KEY</code></li>
+          <li>Redeploy from GitHub Actions</li>
+        </ol>
+      </div>
+    </div>
+  `;
+  throw new Error('VITE_CLERK_PUBLISHABLE_KEY not set at build time — see on-screen instructions');
 }
 
 const clerkAppearance = {
@@ -90,26 +108,16 @@ const clerkAppearance = {
 
 function SignInPage() {
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4 relative overflow-hidden">
-      <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-[120px] mix-blend-screen"></div>
-      </div>
-      <div className="relative z-10">
-        <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
-      </div>
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
     </div>
   );
 }
 
 function SignUpPage() {
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4 relative overflow-hidden">
-      <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-[120px] mix-blend-screen"></div>
-      </div>
-      <div className="relative z-10">
-        <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} />
-      </div>
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} />
     </div>
   );
 }
@@ -176,44 +184,40 @@ function ClerkProviderWithRoutes() {
 
   return (
     <ClerkProvider
-      publishableKey={clerkPubKey}
+      publishableKey={clerkPubKey!}
       proxyUrl={clerkProxyUrl}
       appearance={clerkAppearance}
-      signInUrl={`${basePath}/sign-in`}
-      signUpUrl={`${basePath}/sign-up`}
       routerPush={(to) => setLocation(stripBase(to))}
       routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
     >
-      <QueryClientProvider client={queryClient}>
-        <ClerkQueryClientCacheInvalidator />
-        <Switch>
-          <Route path="/" component={HomeRedirect} />
-          <Route path="/sign-in/*?" component={SignInPage} />
-          <Route path="/sign-up/*?" component={SignUpPage} />
-          <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
-          <Route path="/assistants"><ProtectedRoute component={Assistants} /></Route>
-          <Route path="/assistants/new"><ProtectedRoute component={AssistantNew} /></Route>
-          <Route path="/assistants/:id"><ProtectedRoute component={AssistantDetail} /></Route>
-          <Route path="/conversations"><ProtectedRoute component={Conversations} /></Route>
-          <Route path="/leads"><ProtectedRoute component={Leads} /></Route>
-          <Route path="/appointments"><ProtectedRoute component={Appointments} /></Route>
-          <Route path="/whatsapp"><ProtectedRoute component={WhatsApp} /></Route>
-          <Route path="/subscription"><ProtectedRoute component={Subscription} /></Route>
-          <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
-          
-          <Route path="/:rest*"><ProtectedRoute component={Dashboard} /></Route>
-        </Switch>
-        <Toaster />
-      </QueryClientProvider>
+      <ClerkQueryClientCacheInvalidator />
+      <Switch>
+        <Route path="/" component={HomeRedirect} />
+        <Route path="/sign-in" component={SignInPage} />
+        <Route path="/sign-up" component={SignUpPage} />
+        <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
+        <Route path="/assistants" component={() => <ProtectedRoute component={Assistants} />} />
+        <Route path="/assistants/new" component={() => <ProtectedRoute component={AssistantNew} />} />
+        <Route path="/assistants/:id" component={() => <ProtectedRoute component={AssistantDetail} />} />
+        <Route path="/conversations" component={() => <ProtectedRoute component={Conversations} />} />
+        <Route path="/leads" component={() => <ProtectedRoute component={Leads} />} />
+        <Route path="/appointments" component={() => <ProtectedRoute component={Appointments} />} />
+        <Route path="/whatsapp" component={() => <ProtectedRoute component={WhatsApp} />} />
+        <Route path="/subscription" component={() => <ProtectedRoute component={Subscription} />} />
+        <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />
+      </Switch>
+      <Toaster />
     </ClerkProvider>
   );
 }
 
 function App() {
   return (
-    <WouterRouter base={basePath}>
-      <ClerkProviderWithRoutes />
-    </WouterRouter>
+    <QueryClientProvider client={queryClient}>
+      <WouterRouter base={basePath}>
+        <ClerkProviderWithRoutes />
+      </WouterRouter>
+    </QueryClientProvider>
   );
 }
 
