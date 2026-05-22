@@ -8,6 +8,8 @@ import { rm } from "node:fs/promises";
 globalThis.require = createRequire(import.meta.url);
 
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
+// Resolve workspace packages relative to artifact root
+const workspaceRoot = path.resolve(artifactDir, "../..");
 
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
@@ -21,7 +23,12 @@ async function buildAll() {
     outdir: distDir,
     outExtension: { ".js": ".mjs" },
     logLevel: "info",
-    // Externalize pino and its transports - they use dynamic worker threads
+    // Map workspace package imports to their source files
+    alias: {
+      "@workspace/db": path.resolve(workspaceRoot, "lib/db/src/index.ts"),
+      "@workspace/api-zod": path.resolve(workspaceRoot, "lib/api-zod/src/index.ts"),
+    },
+    // Externalize pino and native modules
     external: [
       "*.node",
       "sharp",
