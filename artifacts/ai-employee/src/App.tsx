@@ -5,6 +5,7 @@ import { Switch, Route, useLocation, Router as WouterRouter } from 'wouter';
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
+import { setBaseUrl, setAuthTokenGetter } from "@workspace/api-client-react";
 
 // Pages
 import Landing from "./pages/landing";
@@ -22,7 +23,13 @@ import { AppLayout } from "./components/layout/app-layout";
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 const basePath = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+
+// Configure API base URL if provided (for external backend)
+if (apiBaseUrl) {
+  setBaseUrl(apiBaseUrl);
+}
 
 function stripBase(path: string): string {
   return basePath && path.startsWith(basePath)
@@ -82,7 +89,7 @@ const clerkAppearance = {
 function SignInPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
-      <SignIn routing="path" path="/sign-in" />
+      <SignIn routing="path" path={`${basePath}/sign-in`} appearance={clerkAppearance} />
     </div>
   );
 }
@@ -90,7 +97,7 @@ function SignInPage() {
 function SignUpPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
-      <SignUp routing="path" path="/sign-up" />
+      <SignUp routing="path" path={`${basePath}/sign-up`} appearance={clerkAppearance} />
     </div>
   );
 }
@@ -99,6 +106,7 @@ function ClerkQueryClientCacheInvalidator() {
   const { addListener } = useClerk();
   const queryClient = useQueryClient();
   const prevUserIdRef = useRef<string | null | undefined>(undefined);
+
   useEffect(() => {
     const unsubscribe = addListener(({ user }) => {
       const userId = user?.id ?? null;
@@ -112,31 +120,56 @@ function ClerkQueryClientCacheInvalidator() {
     });
     return unsubscribe;
   }, [addListener, queryClient]);
+
+  return null;
+}
+
+function ClerkAuthTokenSync() {
+  const { getToken } = useAuth();
+
+  useEffect(() => {
+    setAuthTokenGetter(async () => {
+      try {
+        return await getToken();
+      } catch {
+        return null;
+      }
+    });
+    return () => setAuthTokenGetter(null);
+  }, [getToken]);
+
   return null;
 }
 
 function HomeRedirect() {
   const [, setLocation] = useLocation();
   const { isSignedIn, isLoaded } = useAuth();
+
   useEffect(() => {
     if (isLoaded && isSignedIn) {
       setLocation("/dashboard");
     }
   }, [isLoaded, isSignedIn, setLocation]);
-  if (!isLoaded) return null;
-  if (isSignedIn) return null;
+
+  // Always show Landing — redirect happens via useEffect once Clerk loads
   return <Landing />;
 }
 
 function ProtectedRoute({ component: Component }: { component: any }) {
   const [, setLocation] = useLocation();
   const { isSignedIn, isLoaded } = useAuth();
+
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
       setLocation("/");
     }
   }, [isLoaded, isSignedIn, setLocation]);
-  if (!isLoaded) return null;
+
+  if (!isLoaded) return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="text-primary animate-pulse text-lg">Loading...</div>
+    </div>
+  );
   if (!isSignedIn) return null;
   return (
     <AppLayout>
@@ -147,16 +180,17 @@ function ProtectedRoute({ component: Component }: { component: any }) {
 
 function ClerkProviderWithRoutes() {
   const [, setLocation] = useLocation();
+
   return (
     <ClerkProvider
-      publishableKey={clerkPubKey!}
-      proxyUrl={clerkProxyUrl}
+      publishableKey={clerkPubKey}
+      {...(clerkProxyUrl ? { proxyUrl: clerkProxyUrl } : {})}
       appearance={clerkAppearance}
-      navigate={(to) => setLocation(stripBase(to))}
       routerPush={(to) => setLocation(stripBase(to))}
       routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
     >
       <ClerkQueryClientCacheInvalidator />
+      <ClerkAuthTokenSync />
       <Switch>
         <Route path="/" component={HomeRedirect} />
         <Route path="/sign-in" component={SignInPage} />
