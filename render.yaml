@@ -20,10 +20,16 @@ services:
       - key: CLERK_SECRET_KEY
         sync: false
       - key: CLERK_PUBLISHABLE_KEY
-        sync: false
+        value: pk_test_cmVsZXZhbnQtbG9ic3Rlci04NS5jbGVyay5hY2NvdW50cy5kZXYk
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        value: AIzaSyAMcFfCTz-_b2TyNrsnxqV_xLmmkD7gHK8
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
         sync: false
       - key: OPENAI_API_KEY
         sync: false
