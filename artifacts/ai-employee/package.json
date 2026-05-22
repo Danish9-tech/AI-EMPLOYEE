@@ -77,10 +77,9 @@
   "dependencies": {
     "@clerk/react": "^6.5.0",
     "@clerk/themes": "^2.4.57",
-    "@workspace/api-client-react": "workspace:*",
-    "@workspace/db": "workspace:*",
     "@vercel/node": "^5.0.0",
-    "drizzle-orm": "catalog:"
-  }
+    "@supabase/supabase-js": "^2.49.8"
     
+    
+}
 }
