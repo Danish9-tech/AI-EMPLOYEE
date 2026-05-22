@@ -23,13 +23,11 @@ jobs:
         with:
           version: 9
 
-      - name: Install dependencies
-        working-directory: ./artifacts/ai-employee
+      - name: Install all workspace dependencies
         run: pnpm install --no-frozen-lockfile
 
       - name: Run API codegen
-        working-directory: ./artifacts/ai-employee
-        run: pnpm run generate 2>/dev/null || echo "No generate script"
+        run: pnpm --filter @workspace/api-spec run codegen
 
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
