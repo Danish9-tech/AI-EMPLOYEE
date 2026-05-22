@@ -2,8 +2,23 @@ import { db, knowledgeTable, messagesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger";
 
+// ─── Provider API keys (set in environment) ───────────────────────────────────
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
+// ─── Active provider selection ────────────────────────────────────────────────
+// Priority order: Gemini → Groq → Anthropic → OpenAI → mock
+function getActiveProvider(): "gemini" | "groq" | "anthropic" | "openai" | "mock" {
+  if (GEMINI_API_KEY) return "gemini";
+  if (GROQ_API_KEY) return "groq";
+  if (ANTHROPIC_API_KEY) return "anthropic";
+  if (OPENAI_API_KEY) return "openai";
+  return "mock";
+}
+
+// ─── System prompt builder ─────────────────────────────────────────────────────
 function buildSystemPrompt(businessName: string, description: string, tone: string, knowledge: string): string {
   const toneMap: Record<string, string> = {
     professional: "You are professional, precise, and business-like.",
@@ -25,6 +40,7 @@ ${knowledge || "No specific knowledge provided. Answer generally based on the bu
 Keep responses concise and helpful. Do not make up specific prices or details not in your knowledge base.`;
 }
 
+// ─── DB helpers ───────────────────────────────────────────────────────────────
 async function getKnowledgeContext(assistantId: number): Promise<string> {
   try {
     const items = await db.select().from(knowledgeTable).where(eq(knowledgeTable.assistantId, assistantId));
@@ -47,7 +63,132 @@ async function getConversationHistory(conversationId: number): Promise<{ role: s
   }
 }
 
-async function callOpenAI(messages: { role: string; content: string }[]): Promise<string> {
+// ─── Provider: Google Gemini ──────────────────────────────────────────────────
+async function callGemini(
+  systemPrompt: string,
+  history: { role: string; content: string }[],
+  userMessage: string
+): Promise<string> {
+  // Build contents array: system instruction + history + latest user message
+  const contents: { role: string; parts: { text: string }[] }[] = [];
+
+  // Add conversation history (Gemini uses "user" / "model" roles)
+  for (const msg of history) {
+    contents.push({
+      role: msg.role === "assistant" ? "model" : "user",
+      parts: [{ text: msg.content }],
+    });
+  }
+  // Add the latest user message
+  contents.push({ role: "user", parts: [{ text: userMessage }] });
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents,
+        generationConfig: {
+          maxOutputTokens: 500,
+          temperature: 0.7,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Gemini error: ${response.status} ${err}`);
+  }
+
+  const data = (await response.json()) as any;
+  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "I'm sorry, I couldn't process that right now.";
+}
+
+// ─── Provider: Groq ───────────────────────────────────────────────────────────
+async function callGroq(
+  systemPrompt: string,
+  history: { role: string; content: string }[],
+  userMessage: string
+): Promise<string> {
+  const messages = [
+    { role: "system", content: systemPrompt },
+    ...history,
+    { role: "user", content: userMessage },
+  ];
+
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${GROQ_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "llama-3.3-70b-versatile",
+      messages,
+      max_tokens: 500,
+      temperature: 0.7,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Groq error: ${response.status} ${err}`);
+  }
+
+  const data = (await response.json()) as any;
+  return data.choices?.[0]?.message?.content ?? "I'm sorry, I couldn't process that right now.";
+}
+
+// ─── Provider: Anthropic Claude ───────────────────────────────────────────────
+async function callAnthropic(
+  systemPrompt: string,
+  history: { role: string; content: string }[],
+  userMessage: string
+): Promise<string> {
+  const messages = [
+    ...history,
+    { role: "user", content: userMessage },
+  ];
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": ANTHROPIC_API_KEY!,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-3-5-haiku-20241022",
+      max_tokens: 500,
+      system: systemPrompt,
+      messages,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Anthropic error: ${response.status} ${err}`);
+  }
+
+  const data = (await response.json()) as any;
+  return data.content?.[0]?.text ?? "I'm sorry, I couldn't process that right now.";
+}
+
+// ─── Provider: OpenAI ─────────────────────────────────────────────────────────
+async function callOpenAI(
+  systemPrompt: string,
+  history: { role: string; content: string }[],
+  userMessage: string
+): Promise<string> {
+  const messages = [
+    { role: "system", content: systemPrompt },
+    ...history,
+    { role: "user", content: userMessage },
+  ];
+
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -71,6 +212,7 @@ async function callOpenAI(messages: { role: string; content: string }[]): Promis
   return data.choices?.[0]?.message?.content ?? "I'm sorry, I couldn't process that right now.";
 }
 
+// ─── Mock fallback ────────────────────────────────────────────────────────────
 function mockReply(userMessage: string, businessName: string): string {
   const msg = userMessage.toLowerCase();
   if (msg.includes("price") || msg.includes("cost") || msg.includes("how much")) {
@@ -88,6 +230,7 @@ function mockReply(userMessage: string, businessName: string): string {
   return `Thank you for reaching out to ${businessName}! I'm here to help answer your questions and assist you in any way I can. Could you tell me more about what you're looking for?`;
 }
 
+// ─── Main export ──────────────────────────────────────────────────────────────
 export async function generateAIReply(params: {
   assistantId: number;
   conversationId: number;
@@ -103,21 +246,29 @@ export async function generateAIReply(params: {
     getConversationHistory(conversationId),
   ]);
 
-  if (!OPENAI_API_KEY) {
-    logger.warn("OPENAI_API_KEY not set, using mock replies");
+  const provider = getActiveProvider();
+
+  if (provider === "mock") {
+    logger.warn("No AI API key configured — using mock replies");
     return mockReply(userMessage, businessName);
   }
 
+  const systemPrompt = buildSystemPrompt(businessName, description, tone, knowledge);
+
   try {
-    const systemPrompt = buildSystemPrompt(businessName, description, tone, knowledge);
-    const messages = [
-      { role: "system", content: systemPrompt },
-      ...history,
-      { role: "user", content: userMessage },
-    ];
-    return await callOpenAI(messages);
+    logger.info({ provider }, "Calling AI provider");
+    switch (provider) {
+      case "gemini":
+        return await callGemini(systemPrompt, history, userMessage);
+      case "groq":
+        return await callGroq(systemPrompt, history, userMessage);
+      case "anthropic":
+        return await callAnthropic(systemPrompt, history, userMessage);
+      case "openai":
+        return await callOpenAI(systemPrompt, history, userMessage);
+    }
   } catch (err) {
-    logger.error({ err }, "OpenAI call failed, falling back to mock");
+    logger.error({ err, provider }, "AI provider call failed, falling back to mock");
     return mockReply(userMessage, businessName);
   }
 }
