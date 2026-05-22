@@ -32,6 +32,12 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
+      - name: Install all workspace dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Run API codegen (generates ./generated/api)
+        run: pnpm --filter @workspace/api-spec run codegen
+
       - name: Build via Vercel (env vars injected automatically)
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
