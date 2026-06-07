@@ -1,0 +1,874 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: AI Employee SaaS API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: assistants
+    description: AI assistant management
+  - name: knowledge
+    description: Knowledge base management
+  - name: chat
+    description: Chat and conversations
+  - name: leads
+    description: Lead capture and management
+  - name: appointments
+    description: Appointment booking
+  - name: dashboard
+    description: Dashboard analytics
+  - name: subscription
+    description: Subscription management
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  # ── Assistants ──────────────────────────────────────────────────────────────
+  /assistants:
+    get:
+      operationId: listAssistants
+      tags: [assistants]
+      summary: List all AI assistants for the current user
+      security:
+        - clerkAuth: []
+      responses:
+        "200":
+          description: List of assistants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Assistant"
+    post:
+      operationId: createAssistant
+      tags: [assistants]
+      summary: Create a new AI assistant
+      security:
+        - clerkAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAssistantBody"
+      responses:
+        "201":
+          description: Created assistant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assistant"
+
+  /assistants/{id}:
+    get:
+      operationId: getAssistant
+      tags: [assistants]
+      summary: Get a single assistant
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Assistant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assistant"
+    patch:
+      operationId: updateAssistant
+      tags: [assistants]
+      summary: Update an assistant
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAssistantBody"
+      responses:
+        "200":
+          description: Updated assistant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assistant"
+    delete:
+      operationId: deleteAssistant
+      tags: [assistants]
+      summary: Delete an assistant
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Knowledge ────────────────────────────────────────────────────────────────
+  /assistants/{assistantId}/knowledge:
+    get:
+      operationId: listKnowledge
+      tags: [knowledge]
+      summary: List knowledge items for an assistant
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: assistantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of knowledge items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KnowledgeItem"
+    post:
+      operationId: createKnowledge
+      tags: [knowledge]
+      summary: Add knowledge to an assistant
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: assistantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateKnowledgeBody"
+      responses:
+        "201":
+          description: Created knowledge item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeItem"
+
+  /knowledge/{id}:
+    delete:
+      operationId: deleteKnowledge
+      tags: [knowledge]
+      summary: Delete a knowledge item
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Chat ─────────────────────────────────────────────────────────────────────
+  /assistants/{assistantId}/conversations:
+    get:
+      operationId: listConversations
+      tags: [chat]
+      summary: List conversations for an assistant
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: assistantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Conversation"
+
+  /conversations/{conversationId}/messages:
+    get:
+      operationId: listMessages
+      tags: [chat]
+      summary: Get messages in a conversation
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+
+  /chat:
+    post:
+      operationId: sendChatMessage
+      tags: [chat]
+      summary: Send a message to an AI assistant (widget endpoint)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatMessageBody"
+      responses:
+        "200":
+          description: AI reply
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatMessageResponse"
+
+  # ── Leads ─────────────────────────────────────────────────────────────────────
+  /assistants/{assistantId}/leads:
+    get:
+      operationId: listLeads
+      tags: [leads]
+      summary: List leads captured by an assistant
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: assistantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of leads
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Lead"
+    post:
+      operationId: createLead
+      tags: [leads]
+      summary: Capture a new lead
+      parameters:
+        - name: assistantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLeadBody"
+      responses:
+        "201":
+          description: Created lead
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lead"
+
+  /leads/{id}:
+    patch:
+      operationId: updateLead
+      tags: [leads]
+      summary: Update a lead status
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLeadBody"
+      responses:
+        "200":
+          description: Updated lead
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lead"
+
+  # ── Appointments ─────────────────────────────────────────────────────────────
+  /assistants/{assistantId}/appointments:
+    get:
+      operationId: listAppointments
+      tags: [appointments]
+      summary: List appointments for an assistant
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: assistantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of appointments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Appointment"
+    post:
+      operationId: createAppointment
+      tags: [appointments]
+      summary: Book an appointment
+      parameters:
+        - name: assistantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAppointmentBody"
+      responses:
+        "201":
+          description: Created appointment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+
+  /appointments/{id}:
+    patch:
+      operationId: updateAppointment
+      tags: [appointments]
+      summary: Update appointment status
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAppointmentBody"
+      responses:
+        "200":
+          description: Updated appointment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+
+  # ── Dashboard (wow endpoints) ─────────────────────────────────────────────────
+  /dashboard/stats:
+    get:
+      operationId: getDashboardStats
+      tags: [dashboard]
+      summary: Get overall dashboard statistics
+      security:
+        - clerkAuth: []
+      responses:
+        "200":
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /assistants/{assistantId}/stats:
+    get:
+      operationId: getAssistantStats
+      tags: [dashboard]
+      summary: Get statistics for a specific assistant
+      security:
+        - clerkAuth: []
+      parameters:
+        - name: assistantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Assistant statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantStats"
+
+  # ── Subscription ──────────────────────────────────────────────────────────────
+  /subscription:
+    get:
+      operationId: getSubscription
+      tags: [subscription]
+      summary: Get current user subscription
+      security:
+        - clerkAuth: []
+      responses:
+        "200":
+          description: Subscription details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+    patch:
+      operationId: updateSubscription
+      tags: [subscription]
+      summary: Upgrade or downgrade subscription
+      security:
+        - clerkAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSubscriptionBody"
+      responses:
+        "200":
+          description: Updated subscription
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+
+components:
+  securitySchemes:
+    clerkAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+
+    Assistant:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: string
+        name:
+          type: string
+        businessName:
+          type: string
+        description:
+          type: string
+        tone:
+          type: string
+          enum: [professional, friendly, formal, casual]
+        widgetColor:
+          type: string
+        isActive:
+          type: boolean
+        totalMessages:
+          type: integer
+        totalLeads:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, userId, name, businessName, description, tone, widgetColor, isActive, totalMessages, totalLeads, createdAt, updatedAt]
+
+    CreateAssistantBody:
+      type: object
+      properties:
+        name:
+          type: string
+        businessName:
+          type: string
+        description:
+          type: string
+        tone:
+          type: string
+          enum: [professional, friendly, formal, casual]
+        widgetColor:
+          type: string
+      required: [name, businessName, description]
+
+    UpdateAssistantBody:
+      type: object
+      properties:
+        name:
+          type: string
+        businessName:
+          type: string
+        description:
+          type: string
+        tone:
+          type: string
+          enum: [professional, friendly, formal, casual]
+        widgetColor:
+          type: string
+        isActive:
+          type: boolean
+
+    KnowledgeItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        assistantId:
+          type: integer
+        type:
+          type: string
+          enum: [text, url, pdf]
+        title:
+          type: string
+        content:
+          type: string
+        sourceUrl:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, assistantId, type, title, content, createdAt]
+
+    CreateKnowledgeBody:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [text, url, pdf]
+        title:
+          type: string
+        content:
+          type: string
+        sourceUrl:
+          type: string
+      required: [type, title, content]
+
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: integer
+        assistantId:
+          type: integer
+        sessionId:
+          type: string
+        visitorName:
+          type: string
+        visitorEmail:
+          type: string
+        messageCount:
+          type: integer
+        channel:
+          type: string
+          enum: [widget, whatsapp]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, assistantId, sessionId, messageCount, channel, createdAt, updatedAt]
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversationId:
+          type: integer
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, conversationId, role, content, createdAt]
+
+    ChatMessageBody:
+      type: object
+      properties:
+        assistantId:
+          type: integer
+        sessionId:
+          type: string
+        message:
+          type: string
+        channel:
+          type: string
+          enum: [widget, whatsapp]
+      required: [assistantId, sessionId, message]
+
+    ChatMessageResponse:
+      type: object
+      properties:
+        reply:
+          type: string
+        conversationId:
+          type: integer
+        sessionId:
+          type: string
+      required: [reply, conversationId, sessionId]
+
+    Lead:
+      type: object
+      properties:
+        id:
+          type: integer
+        assistantId:
+          type: integer
+        conversationId:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        status:
+          type: string
+          enum: [new, contacted, qualified, converted, lost]
+        notes:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, assistantId, name, status, createdAt]
+
+    CreateLeadBody:
+      type: object
+      properties:
+        assistantId:
+          type: integer
+        conversationId:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+      required: [assistantId, name]
+
+    UpdateLeadBody:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [new, contacted, qualified, converted, lost]
+        notes:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+
+    Appointment:
+      type: object
+      properties:
+        id:
+          type: integer
+        assistantId:
+          type: integer
+        conversationId:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        scheduledAt:
+          type: string
+          format: date-time
+        service:
+          type: string
+        notes:
+          type: string
+        status:
+          type: string
+          enum: [pending, confirmed, cancelled, completed]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, assistantId, name, scheduledAt, status, createdAt]
+
+    CreateAppointmentBody:
+      type: object
+      properties:
+        assistantId:
+          type: integer
+        conversationId:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        scheduledAt:
+          type: string
+          format: date-time
+        service:
+          type: string
+        notes:
+          type: string
+      required: [assistantId, name, scheduledAt]
+
+    UpdateAppointmentBody:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [pending, confirmed, cancelled, completed]
+        scheduledAt:
+          type: string
+          format: date-time
+        notes:
+          type: string
+
+    DashboardStats:
+      type: object
+      properties:
+        totalAssistants:
+          type: integer
+        totalConversations:
+          type: integer
+        totalMessages:
+          type: integer
+        totalLeads:
+          type: integer
+        totalAppointments:
+          type: integer
+        messagesThisWeek:
+          type: integer
+        leadsThisWeek:
+          type: integer
+        appointmentsThisWeek:
+          type: integer
+        conversionRate:
+          type: number
+      required: [totalAssistants, totalConversations, totalMessages, totalLeads, totalAppointments, messagesThisWeek, leadsThisWeek, appointmentsThisWeek, conversionRate]
+
+    AssistantStats:
+      type: object
+      properties:
+        assistantId:
+          type: integer
+        totalConversations:
+          type: integer
+        totalMessages:
+          type: integer
+        totalLeads:
+          type: integer
+        totalAppointments:
+          type: integer
+        avgResponseTime:
+          type: number
+        topQuestions:
+          type: array
+          items:
+            type: string
+        leadsByStatus:
+          type: object
+          additionalProperties:
+            type: integer
+      required: [assistantId, totalConversations, totalMessages, totalLeads, totalAppointments, avgResponseTime, topQuestions, leadsByStatus]
+
+    Subscription:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: string
+        plan:
+          type: string
+          enum: [free, pro, enterprise]
+        messagesUsed:
+          type: integer
+        messagesLimit:
+          type: integer
+        assistantsLimit:
+          type: integer
+        leadsLimit:
+          type: integer
+        features:
+          type: array
+          items:
+            type: string
+        renewsAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, userId, plan, messagesUsed, messagesLimit, assistantsLimit, leadsLimit, features, createdAt]
+
+    UpdateSubscriptionBody:
+      type: object
+      properties:
+        plan:
+          type: string
+          enum: [free, pro, enterprise]
+      required: [plan]

@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.artifacts/*/dist/
+
+# Environment
+.env
+.env.local
+.env.*.local
+.mcp.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Package lock (we use pnpm)
+package-lock.json
+
+# Test
+coverage/
