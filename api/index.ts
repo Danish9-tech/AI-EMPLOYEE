@@ -1,6 +1,22 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { createServer } from 'http';
+import { readFileSync, existsSync } from 'fs';
+import { resolve } from 'path';
+
+const envFile = resolve(process.cwd(), '.env');
+if (existsSync(envFile)) {
+  const content = readFileSync(envFile, 'utf-8');
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    const val = trimmed.slice(eqIdx + 1).trim();
+    if (!process.env[key]) process.env[key] = val;
+  }
+}
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 
