@@ -16,6 +16,18 @@ async function getUserId(req: VercelRequest): Promise<string | null> {
   return user?.id || null;
 }
 
+function toSnake(val: string): string {
+  return val.replace(/[A-Z]/g, (l) => `_${l.toLowerCase()}`);
+}
+
+function mapKeys(obj: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const key of Object.keys(obj || {})) {
+    result[toSnake(key)] = obj[key];
+  }
+  return result;
+}
+
 function setCors(res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -132,7 +144,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (path === '/api/assistants' && req.method === 'POST') {
       const userId = await getUserId(req);
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-      const { data, error } = await supabase.from('assistants').insert({ ...req.body, user_id: userId }).select().single();
+      const { data, error } = await supabase.from('assistants').insert({ ...mapKeys(req.body || {}), user_id: userId }).select().single();
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
     }
@@ -146,7 +158,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json(data);
       }
       if (req.method === 'PATCH' || req.method === 'PUT') {
-        const { data, error } = await supabase.from('assistants').update(req.body).eq('id', id).select().single();
+        const { data, error } = await supabase.from('assistants').update(mapKeys(req.body || {})).eq('id', id).select().single();
         if (error) return res.status(500).json({ error: error.message });
         return res.json(data);
       }
