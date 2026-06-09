@@ -383,7 +383,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const weekStr = weekAgo.toISOString();
       const twoWeekStr = twoWeeksAgo.toISOString();
 
-      const [currConv, prevConv, currLeads, prevLeads, currAppt, prevAppt, convWeek, convPrev, messages, profileRes] = await Promise.all([
+      const [currConv, prevConv, currLeads, prevLeads, currAppt, prevAppt, convWeek, convPrev, profileRes] = await Promise.all([
         supabase.from('conversations').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', weekStr),
         supabase.from('conversations').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', twoWeekStr).lt('created_at', weekStr),
         supabase.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', weekStr),
@@ -392,9 +392,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', twoWeekStr).lt('created_at', weekStr),
         supabase.from('conversations').select('id, created_at').eq('user_id', userId).gte('created_at', weekStr),
         supabase.from('conversations').select('id').eq('user_id', userId).gte('created_at', twoWeekStr).lt('created_at', weekStr),
-        supabase.from('messages').select('content, role, conversation_id').in('conversation_id', (convWeek.data || []).map((c: any) => c.id)),
         supabase.from('profiles').select('avg_sale_value').eq('user_id', userId).maybeSingle(),
       ]);
+      const weekConvIds2 = (convWeek.data || []).map((c: any) => c.id);
+      const { data: messagesData } = weekConvIds2.length > 0
+        ? await supabase.from('messages').select('content, role, conversation_id').in('conversation_id', weekConvIds2)
+        : { data: [] };
 
       const currConversations = currConv.count || 0;
       const prevConversations = prevConv.count || 0;
@@ -416,7 +419,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const dailyChart = Object.entries(dailyMap).sort(([a], [b]) => a.localeCompare(b)).map(([date, count]) => ({ date, count }));
 
       const unsurePhrases = ["i don't know", "i'm not sure", "i don't have", "please contact", "i cannot", "i am not sure", "i don't understand"];
-      const unanswered = ((messages.data || []) as any[])
+      const unanswered = ((messagesData || []) as any[])
         .filter((m: any) => m.role === 'assistant' && unsurePhrases.some((p) => (m.content || '').toLowerCase().includes(p)))
         .slice(0, 10)
         .map((m: any) => ({ content: m.content, conversation_id: m.conversation_id }));
@@ -519,7 +522,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               max_tokens: 500,
             }),
           });
-          const groqData = await groqRes.json();
+          const groqData: any = await groqRes.json();
           reply = groqData.choices?.[0]?.message?.content || "I'm not sure how to respond to that.";
         } else {
           reply = `This is a simulated response from ${assistant.name}. Connect a Groq API key to enable AI responses.`;
