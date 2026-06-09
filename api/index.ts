@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import { createServer } from 'http';
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 
@@ -683,4 +684,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const message = err instanceof Error ? err.message : 'Internal server error';
     return res.status(500).json({ error: message });
   }
+}
+
+const PORT = parseInt(process.env.API_PORT || '8080', 10);
+if (process.argv[1]?.endsWith('index.ts') || process.argv[1]?.endsWith('index.js')) {
+  createServer((req, res) => {
+    let body = '';
+    req.on('data', (c: Buffer) => { body += c.toString(); });
+    req.on('end', () => {
+      try { (req as any).body = body ? JSON.parse(body) : {}; } catch { (req as any).body = {}; }
+      (req as any).query = Object.fromEntries(new URL(req.url || '/', 'http://localhost').searchParams);
+
+      const mockRes = {
+        statusCode: 200,
+        status: function (this: any, code: number) { this.statusCode = code; return this; },
+        json: function (this: any, data: any) {
+          res.statusCode = this.statusCode || 200;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(data));
+        },
+        setHeader: (k: string, v: string) => res.setHeader(k, v),
+        end: (d?: string) => res.end(d || ''),
+      };
+
+      handler(req as any, mockRes as any).catch((e: any) => {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: e?.message || 'Internal server error' }));
+      });
+    });
+  }).listen(PORT, () => console.log(`API server running on http://localhost:${PORT}`));
 }
