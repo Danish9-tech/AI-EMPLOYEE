@@ -16,6 +16,8 @@ build/
 # Logs
 *.log
 npm-debug.log*
+api-stderr.txt
+api-stdout.txt
 
 # Editor
 .idea/

@@ -1,11 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "pnpm --filter @workspace/api-spec run codegen && pnpm --filter ai-employee run build",
-  "outputDirectory": "artifacts/ai-employee/dist/public",
-  "installCommand": "pnpm install --no-frozen-lockfile",
-  "framework": null,
-  "cleanUrls": true,
-  "trailingSlash": false,
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
   "routes": [
     { "handle": "filesystem" },
     { "src": "/api/(.*)", "dest": "/api/$1" },
