@@ -441,6 +441,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { data: template } = await supabase.from('marketplace_templates').select('*').eq('id', templateId).single();
       if (!template) return res.status(404).json({ error: 'Template not found' });
 
+      const { data: profile } = await supabase.from('profiles').select('business_name').eq('user_id', userId).maybeSingle();
+
       const { data: newAssistant, error: insertError } = await supabase.from('assistants').insert({
         user_id: userId,
         name: template.name,
@@ -448,6 +450,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         template_id: template.id,
         config: template.default_config || {},
         is_active: true,
+        business_name: profile?.business_name || '',
       }).select().single();
       if (insertError) return res.status(500).json({ error: insertError.message });
 
