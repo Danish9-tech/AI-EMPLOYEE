@@ -59,12 +59,13 @@ export default function Onboarding() {
     localStorage.setItem("onboardingFaqs", faqs);
   };
 
-  const { data: hasAssistants } = useQuery({
+  const { data: hasAssistants, isLoading: checking } = useQuery({
     queryKey: ["onboardingCheck"],
     queryFn: async () => {
       const list = await api.listAssistants();
       return list.length > 0;
     },
+    retry: 1,
   });
 
   const createMutation = useMutation({
@@ -97,7 +98,7 @@ export default function Onboarding() {
     },
   });
 
-  if (hasAssistants === undefined) {
+  if (checking) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Activity className="h-8 w-8 text-primary animate-pulse" />
