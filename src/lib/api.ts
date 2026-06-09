@@ -77,6 +77,10 @@ export const api = {
     apiFetch<any>("/api/marketplace/install", { method: "POST", body: JSON.stringify({ templateId }) }),
   publishMarketplaceTemplate: (data: any) =>
     apiFetch<any>("/api/marketplace/publish", { method: "POST", body: JSON.stringify(data) }),
+  createMarketplaceTemplate: (data: any) =>
+    apiFetch<any>("/api/marketplace/create", { method: "POST", body: JSON.stringify(data) }),
+  deleteMarketplaceTemplate: (templateId: number) =>
+    apiFetch<void>(`/api/marketplace/${templateId}`, { method: "DELETE" }),
 
   // Referral Clicks
   listReferralClicks: () => apiFetch<any[]>("/api/referral_clicks"),

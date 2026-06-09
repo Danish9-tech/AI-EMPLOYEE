@@ -429,7 +429,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { data: allTemplates } = await supabase.from('marketplace_templates').select('*').order('name');
       const { data: installed } = await supabase.from('assistants').select('template_id').eq('user_id', userId).not('template_id', 'is', null);
       const installedIds = new Set((installed || []).map((a: any) => a.template_id));
-      const result = (allTemplates || []).map((t: any) => ({ ...t, installed: installedIds.has(t.id) }));
+      const result = (allTemplates || []).map((t: any) => ({ ...t, installed: installedIds.has(t.id), isOwner: t.user_id === userId }));
       return res.json(result);
     }
 
@@ -495,6 +495,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }).select().single();
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
+    }
+
+    if (path === '/api/marketplace/create' && req.method === 'POST') {
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
+      const { name, description, category, industry, defaultConfig } = req.body || {};
+      if (!name) return res.status(400).json({ error: 'name required' });
+      const { data, error } = await supabase.from('marketplace_templates').insert({
+        user_id: userId,
+        name,
+        description: description || '',
+        category: category || 'General',
+        industry: industry || '',
+        default_config: defaultConfig || {},
+        is_published: true,
+        installs: 0,
+      }).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data);
+    }
+
+    const marketplaceItemMatch = path.match(/^\/api\/marketplace\/(\d+)$/);
+    if (marketplaceItemMatch && req.method === 'DELETE') {
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
+      const id = marketplaceItemMatch[1];
+      const { data: existing } = await supabase.from('marketplace_templates').select('id').eq('id', id).eq('user_id', userId).single();
+      if (!existing) return res.status(404).json({ error: 'Template not found' });
+      const { error } = await supabase.from('marketplace_templates').delete().eq('id', id).eq('user_id', userId);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(204).end();
     }
 
     // ---- REFERRAL CLICKS ----
