@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Bot, MessageSquare, Users, Calendar,
-  Smartphone, CreditCard, Settings, LogOut, Menu
+  Smartphone, CreditCard, Settings, LogOut, Menu,
+  Store, BarChart3
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -13,6 +14,8 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/assistants", label: "Assistants", icon: Bot },
   { href: "/conversations", label: "Conversations", icon: MessageSquare },
+  { href: "/marketplace", label: "Marketplace", icon: Store },
+  { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/leads", label: "Leads", icon: Users },
   { href: "/appointments", label: "Appointments", icon: Calendar },
   { href: "/whatsapp", label: "WhatsApp", icon: Smartphone },

@@ -32,10 +32,15 @@ export const api = {
   updateAssistant: (id: number, data: any) =>
     apiFetch<any>(`/api/assistants/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
-  listConversations: (assistantId: number) =>
-    apiFetch<any[]>(`/api/conversations?assistantId=${assistantId}`),
+  listConversations: (assistantId?: number) =>
+    apiFetch<any[]>(assistantId ? `/api/conversations?assistantId=${assistantId}` : "/api/conversations"),
+  getConversation: (id: number) =>
+    apiFetch<any>(`/api/conversations/${id}`),
   createConversation: (data: any) =>
     apiFetch<any>("/api/conversations", { method: "POST", body: JSON.stringify(data) }),
+
+  listMessages: (conversationId: number) =>
+    apiFetch<any[]>(`/api/conversations/${conversationId}/messages`),
 
   listLeads: (assistantId: number) =>
     apiFetch<any[]>(`/api/leads?assistantId=${assistantId}`),
@@ -50,6 +55,11 @@ export const api = {
   listKnowledge: () => apiFetch<any[]>("/api/knowledge"),
   createKnowledge: (data: any) =>
     apiFetch<any>("/api/knowledge", { method: "POST", body: JSON.stringify(data) }),
+
+  listMarketplaceTemplates: () =>
+    apiFetch<any[]>("/api/marketplace"),
+  installMarketplaceTemplate: (templateId: number) =>
+    apiFetch<any>("/api/marketplace/install", { method: "POST", body: JSON.stringify({ templateId }) }),
 
   getHealth: () => apiFetch<{ status: string }>("/api/healthz"),
 };

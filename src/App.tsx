@@ -15,6 +15,10 @@ import AssistantDetail from "./pages/assistant-detail";
 import Conversations from "./pages/conversations";
 import Leads from "./pages/leads";
 import Appointments from "./pages/appointments";
+import Marketplace from "./pages/marketplace";
+import Reports from "./pages/reports";
+import Onboarding from "./pages/onboarding";
+import ChatDetail from "./pages/chat";
 import WhatsApp from "./pages/whatsapp";
 import Subscription from "./pages/subscription";
 import Settings from "./pages/settings";
@@ -277,6 +281,10 @@ function AppRoutes() {
       <Route path="/conversations" component={() => <ProtectedRoute component={Conversations} />} />
       <Route path="/leads" component={() => <ProtectedRoute component={Leads} />} />
       <Route path="/appointments" component={() => <ProtectedRoute component={Appointments} />} />
+      <Route path="/marketplace" component={() => <ProtectedRoute component={Marketplace} />} />
+      <Route path="/reports" component={() => <ProtectedRoute component={Reports} />} />
+      <Route path="/onboarding" component={() => <ProtectedRoute component={Onboarding} />} />
+      <Route path="/chat/:id" component={() => <ProtectedRoute component={ChatDetail} />} />
       <Route path="/whatsapp" component={() => <ProtectedRoute component={WhatsApp} />} />
       <Route path="/subscription" component={() => <ProtectedRoute component={Subscription} />} />
       <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />

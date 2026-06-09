@@ -77,7 +77,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (path === '/api/conversations' && req.method === 'GET') {
       const userId = await getUserId(req);
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-      const { data, error } = await supabase.from('conversations').select('*').eq('user_id', userId);
+      let query = supabase.from('conversations').select('*').eq('user_id', userId);
+      const assistantId = req.query?.assistantId;
+      if (assistantId) query = query.eq('assistant_id', assistantId);
+      const { data, error } = await query;
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
     }
@@ -86,6 +89,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const userId = await getUserId(req);
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
       const { data, error } = await supabase.from('conversations').insert({ ...req.body, user_id: userId }).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data);
+    }
+
+    const conversationMatch = path.match(/^\/api\/conversations\/(\d+)$/);
+    if (conversationMatch) {
+      if (req.method === 'GET') {
+        const { data, error } = await supabase.from('conversations').select('*').eq('id', conversationMatch[1]).single();
+        if (error) return res.status(404).json({ error: error.message });
+        return res.json(data);
+      }
+    }
+
+    const messagesMatch = path.match(/^\/api\/conversations\/(\d+)\/messages$/);
+    if (messagesMatch && req.method === 'GET') {
+      const { data, error } = await supabase.from('messages').select('*').eq('conversation_id', messagesMatch[1]).order('created_at', { ascending: true });
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
     }
@@ -138,6 +157,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const userId = await getUserId(req);
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
       const { data, error } = await supabase.from('knowledge').insert({ ...req.body, user_id: userId }).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data);
+    }
+
+    // ---- MARKETPLACE ----
+    if (path === '/api/marketplace' && req.method === 'GET') {
+      const userId = await getUserId(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const { data: allTemplates } = await supabase.from('marketplace_templates').select('*').order('name');
+      const { data: installed } = await supabase.from('assistants').select('template_id').eq('user_id', userId).not('template_id', 'is', null);
+      const installedIds = new Set((installed || []).map((a: any) => a.template_id));
+      const result = (allTemplates || []).map((t: any) => ({ ...t, installed: installedIds.has(t.id) }));
+      return res.json(result);
+    }
+
+    if (path === '/api/marketplace/install' && req.method === 'POST') {
+      const userId = await getUserId(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const { templateId } = req.body || {};
+      if (!templateId) return res.status(400).json({ error: 'templateId required' });
+      const { data: template } = await supabase.from('marketplace_templates').select('*').eq('id', templateId).single();
+      if (!template) return res.status(404).json({ error: 'Template not found' });
+      const { data, error } = await supabase.from('assistants').insert({
+        user_id: userId,
+        name: template.name,
+        description: template.description,
+        template_id: template.id,
+        config: template.default_config || {},
+        is_active: true,
+      }).select().single();
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
     }
