@@ -36,6 +36,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json({ status: 'ok', timestamp: new Date().toISOString() });
     }
 
+    // ---- DASHBOARD STATS ----
+    if (path === '/api/dashboard/stats' && req.method === 'GET') {
+      const userId = await getUserId(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const [assistantsRes, conversationsRes, leadsRes] = await Promise.all([
+        supabase.from('assistants').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+        supabase.from('conversations').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+        supabase.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+      ]);
+
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      const weekStr = weekAgo.toISOString();
+
+      const [convWeekRes, leadsWeekRes] = await Promise.all([
+        supabase.from('conversations').select('id').eq('user_id', userId).gte('created_at', weekStr),
+        supabase.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', weekStr),
+      ]);
+
+      const weekConvIds = (convWeekRes.data || []).map((c: any) => c.id);
+      let messagesThisWeek = 0;
+      if (weekConvIds.length > 0) {
+        const { count } = await supabase.from('messages').select('id', { count: 'exact', head: true }).in('conversation_id', weekConvIds);
+        messagesThisWeek = count || 0;
+      }
+
+      const totalConversations = conversationsRes.count || 0;
+      const totalLeads = leadsRes.count || 0;
+      const leadsThisWeek = leadsWeekRes.count || 0;
+      const conversionRate = totalConversations > 0 ? (totalLeads / totalConversations) * 100 : 0;
+
+      return res.json({
+        totalAssistants: assistantsRes.count || 0,
+        totalConversations,
+        totalLeads,
+        messagesThisWeek,
+        leadsThisWeek,
+        conversionRate: Math.round(conversionRate * 10) / 10,
+      });
+    }
+
     // ---- ASSISTANTS ----
     if (path === '/api/assistants' && req.method === 'GET') {
       const userId = await getUserId(req);
