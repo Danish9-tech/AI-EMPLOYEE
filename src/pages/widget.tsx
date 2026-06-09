@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useParams } from "wouter";
-import { Bot, Send, X, Loader2 } from "lucide-react";
+import { Bot, Send, X, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
 
 export default function WidgetPage() {
   const params = useParams();
@@ -11,20 +11,28 @@ export default function WidgetPage() {
   const [input, setInput] = useState("");
   const [isOpen, setIsOpen] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  const loadAssistant = () => {
     if (!assistantId) return;
+    setLoading(true);
+    setError(null);
     fetch(`/api/widget?assistantId=${assistantId}`)
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`Failed to load assistant (${r.status})`);
+        return r.json();
+      })
       .then(data => {
         setAssistant(data);
         setPlan(data.plan || "free");
         setMessages([{ role: "assistant", content: data.config?.welcomeMessage || `Hi! I'm ${data.name}. How can I help you today?` }]);
       })
-      .catch(() => {})
+      .catch(err => {
+        setError(err.message || 'Failed to load assistant');
+      })
       .finally(() => setLoading(false));
 
     fetch("/api/referral_clicks", {
@@ -32,6 +40,10 @@ export default function WidgetPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ assistantId: Number(assistantId), referrer: "widget", pageUrl: window.location.href }),
     }).catch(() => {});
+  };
+
+  useEffect(() => {
+    loadAssistant();
   }, [assistantId]);
 
   useEffect(() => {
@@ -54,10 +66,11 @@ export default function WidgetPage() {
         const data = await res.json();
         setMessages(prev => [...prev, { role: "assistant", content: data.reply }]);
       } else {
-        setMessages(prev => [...prev, { role: "assistant", content: "Sorry, I couldn't process that. Please try again." }]);
+        const errData = await res.json().catch(() => ({ error: 'Request failed' }));
+        setMessages(prev => [...prev, { role: "assistant", content: errData.error || "Sorry, I couldn't process that. Please try again." }]);
       }
     } catch {
-      setMessages(prev => [...prev, { role: "assistant", content: "Connection error. Please try again." }]);
+      setMessages(prev => [...prev, { role: "assistant", content: "Connection error. Please check your internet and try again." }]);
     } finally {
       setSending(false);
     }
@@ -68,7 +81,33 @@ export default function WidgetPage() {
   if (loading) {
     return (
       <div className="fixed bottom-6 right-6 z-[9999]">
-        <div className="w-14 h-14 rounded-full bg-primary/20 animate-pulse" />
+        <div className="w-14 h-14 rounded-full bg-primary/20 animate-pulse flex items-center justify-center">
+          <Bot className="h-6 w-6 text-primary/50" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="fixed bottom-6 right-6 z-[9999]">
+        <div className="bg-[#1a1a2e] border border-red-500/30 rounded-2xl shadow-2xl overflow-hidden w-80 sm:w-96">
+          <div className="flex items-center gap-3 p-4 border-b border-white/10 bg-[#0f0f23]">
+            <div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center">
+              <AlertTriangle className="h-4 w-4 text-red-400" />
+            </div>
+            <p className="text-white text-sm font-medium">Unable to load</p>
+          </div>
+          <div className="p-6 text-center">
+            <p className="text-muted-foreground text-sm mb-4">{error}</p>
+            <button
+              onClick={loadAssistant}
+              className="inline-flex items-center gap-2 bg-primary text-black px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+            >
+              <RefreshCw className="h-4 w-4" /> Retry
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

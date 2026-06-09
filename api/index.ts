@@ -1,6 +1,34 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 
+const RATE_LIMIT_WINDOW_MS = 60_000;
+
+interface RateLimitEntry {
+  count: number;
+  resetAt: number;
+}
+
+const rateLimitMap = new Map<string, RateLimitEntry>();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimitMap) {
+    if (now > entry.resetAt) rateLimitMap.delete(key);
+  }
+}, 30_000);
+
+function checkRateLimit(key: string, maxRequests: number): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(key);
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return true;
+  }
+  if (entry.count >= maxRequests) return false;
+  entry.count++;
+  return true;
+}
+
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
@@ -28,15 +56,48 @@ function mapKeys(obj: Record<string, any>): Record<string, any> {
   return result;
 }
 
-function setCors(res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
+function getAllowedOrigins(): string[] {
+  const raw = process.env.CORS_ORIGIN || process.env.SUPABASE_URL || '';
+  return raw.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function setCors(req: VercelRequest, res: VercelResponse) {
+  const origin = req.headers['origin'] as string || '';
+  const allowed = getAllowedOrigins();
+  if (allowed.length > 0 && allowed.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  } else if (allowed.length === 1 && allowed[0] === '*') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', allowed[0] || '');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
 }
 
+function getClientIp(req: VercelRequest): string {
+  return (req.headers['x-forwarded-for'] as string || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
+}
+
+async function requireUserId(req: VercelRequest, res: VercelResponse): Promise<string | null> {
+  const userId = await getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return null;
+  }
+  return userId;
+}
+
+function getQueryParam(req: VercelRequest, name: string): string | undefined {
+  const val = req.query?.[name];
+  if (Array.isArray(val)) return val[0];
+  return val;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  setCors(res);
+  setCors(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const url = req.url || '';
@@ -48,10 +109,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json({ status: 'ok', timestamp: new Date().toISOString() });
     }
 
+    // ---- RATE LIMITING ----
+    const ip = getClientIp(req);
+    const ipKey = `${ip}:${path}`;
+
+    if (path === '/api/chat') {
+      if (!checkRateLimit(ipKey, 30)) return res.status(429).json({ error: 'Too many requests. Try again later.' });
+    } else if (path === '/api/widget') {
+      if (!checkRateLimit(ipKey, 60)) return res.status(429).json({ error: 'Too many requests. Try again later.' });
+    } else if (path === '/api/referral_clicks' && req.method === 'POST') {
+      if (!checkRateLimit(ipKey, 20)) return res.status(429).json({ error: 'Too many requests. Try again later.' });
+    }
+
     // ---- DASHBOARD STATS ----
     if (path === '/api/dashboard/stats' && req.method === 'GET') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
 
       const [assistantsRes, conversationsRes, leadsRes, appointmentsRes, profileRes] = await Promise.all([
         supabase.from('assistants').select('id', { count: 'exact', head: true }).eq('user_id', userId),
@@ -112,8 +185,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ---- PROFILE ----
     if (path === '/api/profile' && req.method === 'GET') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       let { data, error } = await supabase.from('profiles').select('*').eq('user_id', userId).maybeSingle();
       if (error) return res.status(500).json({ error: error.message });
       if (!data) {
@@ -125,8 +198,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (path === '/api/profile' && req.method === 'PATCH') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       const { data, error } = await supabase.from('profiles').update({ ...req.body, updated_at: new Date().toISOString() }).eq('user_id', userId).select().single();
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
@@ -134,16 +207,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ---- ASSISTANTS ----
     if (path === '/api/assistants' && req.method === 'GET') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       const { data, error } = await supabase.from('assistants').select('*').eq('user_id', userId);
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
     }
 
     if (path === '/api/assistants' && req.method === 'POST') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       const { data, error } = await supabase.from('assistants').insert({ ...mapKeys(req.body || {}), user_id: userId }).select().single();
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
@@ -153,17 +226,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (assistantMatch) {
       const id = assistantMatch[1];
       if (req.method === 'GET') {
-        const { data, error } = await supabase.from('assistants').select('*').eq('id', id).single();
-        if (error) return res.status(404).json({ error: error.message });
+        const userId = await requireUserId(req, res);
+        if (!userId) return;
+        const { data, error } = await supabase.from('assistants').select('*').eq('id', id).eq('user_id', userId).single();
+        if (error) return res.status(404).json({ error: 'Assistant not found' });
         return res.json(data);
       }
       if (req.method === 'PATCH' || req.method === 'PUT') {
-        const { data, error } = await supabase.from('assistants').update(mapKeys(req.body || {})).eq('id', id).select().single();
+        const userId = await requireUserId(req, res);
+        if (!userId) return;
+        const { data: existing } = await supabase.from('assistants').select('id').eq('id', id).eq('user_id', userId).single();
+        if (!existing) return res.status(404).json({ error: 'Assistant not found' });
+        const { data, error } = await supabase.from('assistants').update(mapKeys(req.body || {})).eq('id', id).eq('user_id', userId).select().single();
         if (error) return res.status(500).json({ error: error.message });
         return res.json(data);
       }
       if (req.method === 'DELETE') {
-        const { error } = await supabase.from('assistants').delete().eq('id', id);
+        const userId = await requireUserId(req, res);
+        if (!userId) return;
+        const { data: existing } = await supabase.from('assistants').select('id').eq('id', id).eq('user_id', userId).single();
+        if (!existing) return res.status(404).json({ error: 'Assistant not found' });
+        const { error } = await supabase.from('assistants').delete().eq('id', id).eq('user_id', userId);
         if (error) return res.status(500).json({ error: error.message });
         return res.status(204).end();
       }
@@ -174,13 +257,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (assistantKnowledgeMatch) {
       const assistantId = assistantKnowledgeMatch[1];
       if (req.method === 'GET') {
+        const userId = await requireUserId(req, res);
+        if (!userId) return;
+        const { data: assistant } = await supabase.from('assistants').select('id').eq('id', assistantId).eq('user_id', userId).single();
+        if (!assistant) return res.status(404).json({ error: 'Assistant not found' });
         const { data, error } = await supabase.from('knowledge').select('*').eq('assistant_id', assistantId);
         if (error) return res.status(500).json({ error: error.message });
         return res.json(data);
       }
       if (req.method === 'POST') {
-        const userId = await getUserId(req);
-        if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+        const userId = await requireUserId(req, res);
+        if (!userId) return;
+        const { data: assistant } = await supabase.from('assistants').select('id').eq('id', assistantId).eq('user_id', userId).single();
+        if (!assistant) return res.status(404).json({ error: 'Assistant not found' });
         const { data, error } = await supabase.from('knowledge').insert({ ...req.body, user_id: userId, assistant_id: parseInt(assistantId) }).select().single();
         if (error) return res.status(500).json({ error: error.message });
         return res.json(data);
@@ -189,17 +278,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const knowledgeItemMatch = path.match(/^\/api\/knowledge\/(\d+)$/);
     if (knowledgeItemMatch && req.method === 'DELETE') {
-      const { error } = await supabase.from('knowledge').delete().eq('id', knowledgeItemMatch[1]);
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
+      const { data: existing } = await supabase.from('knowledge').select('id').eq('id', knowledgeItemMatch[1]).eq('user_id', userId).single();
+      if (!existing) return res.status(404).json({ error: 'Knowledge item not found' });
+      const { error } = await supabase.from('knowledge').delete().eq('id', knowledgeItemMatch[1]).eq('user_id', userId);
       if (error) return res.status(500).json({ error: error.message });
       return res.status(204).end();
     }
 
     // ---- CONVERSATIONS ----
     if (path === '/api/conversations' && req.method === 'GET') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       let query = supabase.from('conversations').select('*').eq('user_id', userId);
-      const assistantId = (req as any).query?.assistantId;
+      const assistantId = getQueryParam(req, 'assistantId');
       if (assistantId) query = query.eq('assistant_id', assistantId);
       const { data, error } = await query;
       if (error) return res.status(500).json({ error: error.message });
@@ -207,8 +300,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (path === '/api/conversations' && req.method === 'POST') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       const { data, error } = await supabase.from('conversations').insert({ ...req.body, user_id: userId }).select().single();
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
@@ -217,14 +310,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const conversationMatch = path.match(/^\/api\/conversations\/(\d+)$/);
     if (conversationMatch) {
       if (req.method === 'GET') {
-        const { data, error } = await supabase.from('conversations').select('*').eq('id', conversationMatch[1]).single();
-        if (error) return res.status(404).json({ error: error.message });
+        const userId = await requireUserId(req, res);
+        if (!userId) return;
+        const { data, error } = await supabase.from('conversations').select('*').eq('id', conversationMatch[1]).eq('user_id', userId).single();
+        if (error) return res.status(404).json({ error: 'Conversation not found' });
         return res.json(data);
       }
     }
 
     const messagesMatch = path.match(/^\/api\/conversations\/(\d+)\/messages$/);
     if (messagesMatch && req.method === 'GET') {
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
+      const { data: conversation } = await supabase.from('conversations').select('id').eq('id', messagesMatch[1]).eq('user_id', userId).single();
+      if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
       const { data, error } = await supabase.from('messages').select('*').eq('conversation_id', messagesMatch[1]).order('created_at', { ascending: true });
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
@@ -232,16 +331,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ---- LEADS ----
     if (path === '/api/leads' && req.method === 'GET') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       const { data, error } = await supabase.from('leads').select('*').eq('user_id', userId);
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
     }
 
     if (path === '/api/leads' && req.method === 'POST') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       const { data, error } = await supabase.from('leads').insert({ ...req.body, user_id: userId }).select().single();
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
@@ -249,8 +348,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ---- APPOINTMENTS ----
     if (path === '/api/appointments' && req.method === 'GET') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       const { data, error } = await supabase.from('appointments').select('*').eq('user_id', userId);
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
@@ -258,8 +357,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ---- SUBSCRIPTIONS ----
     if (path === '/api/subscriptions' && req.method === 'GET') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       let { data, error } = await supabase.from('subscriptions').select('*').eq('user_id', userId).maybeSingle();
       if (error) return res.status(500).json({ error: error.message });
       if (!data) {
@@ -272,16 +371,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ---- KNOWLEDGE ----
     if (path === '/api/knowledge' && req.method === 'GET') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       const { data, error } = await supabase.from('knowledge').select('*').eq('user_id', userId);
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
     }
 
     if (path === '/api/knowledge' && req.method === 'POST') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       const { data, error } = await supabase.from('knowledge').insert({ ...req.body, user_id: userId }).select().single();
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
@@ -289,8 +388,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ---- MARKETPLACE ----
     if (path === '/api/marketplace' && req.method === 'GET') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       const { data: allTemplates } = await supabase.from('marketplace_templates').select('*').order('name');
       const { data: installed } = await supabase.from('assistants').select('template_id').eq('user_id', userId).not('template_id', 'is', null);
       const installedIds = new Set((installed || []).map((a: any) => a.template_id));
@@ -299,8 +398,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (path === '/api/marketplace/install' && req.method === 'POST') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       const { templateId } = req.body || {};
       if (!templateId) return res.status(400).json({ error: 'templateId required' });
       const { data: template } = await supabase.from('marketplace_templates').select('*').eq('id', templateId).single();
@@ -333,8 +432,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (path === '/api/marketplace/publish' && req.method === 'POST') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       const { assistantId, title, description, category, industry } = req.body || {};
       if (!assistantId || !title) return res.status(400).json({ error: 'assistantId and title required' });
       const { data: assistant } = await supabase.from('assistants').select('*').eq('id', assistantId).eq('user_id', userId).single();
@@ -357,8 +456,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ---- REFERRAL CLICKS ----
     if (path === '/api/referral_clicks' && req.method === 'GET') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       const { data: assistants } = await supabase.from('assistants').select('id').eq('user_id', userId);
       const ids = (assistants || []).map((a: any) => a.id);
       if (ids.length === 0) return res.json([]);
@@ -372,7 +471,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (path === '/api/referral_clicks' && req.method === 'POST') {
       const { assistantId, referrer, pageUrl } = req.body || {};
       if (!assistantId) return res.status(400).json({ error: 'assistantId required' });
-      const ip = (req.headers['x-forwarded-for'] as string || req.socket?.remoteAddress || '').split(',')[0].trim();
       const { data, error } = await supabase.from('referral_clicks').insert({
         assistant_id: assistantId,
         referrer: referrer || 'widget',
@@ -386,8 +484,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ---- REPORTS / WEEKLY ----
     if (path === '/api/reports/weekly' && req.method === 'GET') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
 
       const now = new Date();
       const weekAgo = new Date(now.getTime() - 7 * 86400000);
@@ -469,8 +567,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ---- WHATSAPP CONFIG ----
     if (path === '/api/whatsapp/config' && req.method === 'GET') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       const { data, error } = await supabase.from('subscriptions').select('whatsapp_enabled, whatsapp_phone_number, whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_webhook_verify_token').eq('user_id', userId).single();
       if (error) return res.status(404).json({ enabled: false, phoneNumber: null, phoneNumberId: null, webhookUrl: '' });
       return res.json({
@@ -482,8 +580,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (path === '/api/whatsapp/config' && req.method === 'PATCH') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       const { phoneNumberId, businessAccountId, accessToken, phoneNumber } = req.body || {};
       const { data, error } = await supabase.from('subscriptions').update({
         whatsapp_enabled: true,
@@ -498,8 +596,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (path === '/api/whatsapp/config' && req.method === 'DELETE') {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
       const { error } = await supabase.from('subscriptions').update({
         whatsapp_enabled: false,
         whatsapp_phone_number_id: null,
@@ -556,7 +654,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             { conversation_id: conversationId, role: 'assistant', content: reply },
           ]);
         }
-      } catch (e) {
+      } catch {
         reply = "I'm having trouble connecting right now. Please try again.";
       }
 
@@ -565,7 +663,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ---- PUBLIC WIDGET ----
     if (path === '/api/widget' && req.method === 'GET') {
-      const assistantId = (req as any).query?.assistantId;
+      const assistantId = getQueryParam(req, 'assistantId');
       if (!assistantId) return res.status(400).json({ error: 'assistantId required' });
       const { data: assistant } = await supabase.from('assistants').select('*').eq('id', assistantId).single();
       if (!assistant) return res.status(404).json({ error: 'Assistant not found' });

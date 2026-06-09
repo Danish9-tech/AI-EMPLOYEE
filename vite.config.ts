@@ -11,7 +11,7 @@ export default defineConfig({
   base: '/',
   plugins: [
     react(),
-    tailwindcss({ optimize: false }),
+    tailwindcss(),
     runtimeErrorOverlay(),
   ],
   resolve: {
@@ -24,12 +24,20 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom", "wouter"],
+          recharts: ["recharts"],
+          supabase: ["@supabase/supabase-js"],
+        },
+      },
+    },
   },
   server: {
     port,
     strictPort: true,
     host: "0.0.0.0",
-    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
@@ -43,6 +51,5 @@ export default defineConfig({
   preview: {
     port,
     host: "0.0.0.0",
-    allowedHosts: true,
   },
 });

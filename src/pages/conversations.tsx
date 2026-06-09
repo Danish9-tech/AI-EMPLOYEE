@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
-import { MessageSquare, Calendar as CalendarIcon, Smartphone, Monitor } from "lucide-react";
+import { MessageSquare, Calendar as CalendarIcon, Smartphone, Monitor, ArrowRight } from "lucide-react";
 import { format } from "date-fns";
 import { api } from "@/lib/api";
 
@@ -60,27 +61,31 @@ export default function Conversations() {
       ) : (
         <div className="grid gap-4">
           {conversations?.map((conv: any) => (
-            <Card key={conv.id} className="bg-white/5 border-white/10 hover:border-primary/50 transition-colors cursor-pointer group">
-              <CardContent className="p-6 flex items-center justify-between">
-                <div className="flex items-center gap-6">
-                  <div className={`p-3 rounded-xl border ${conv.channel === 'whatsapp' ? 'bg-green-500/20 border-green-500/30' : 'bg-primary/20 border-primary/30'}`}>
-                    {conv.channel === 'whatsapp' ? <Smartphone className="h-6 w-6 text-green-400" /> : <Monitor className="h-6 w-6 text-primary" />}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-semibold text-white text-lg">{conv.visitorName || 'Anonymous Visitor'}</span>
-                      {conv.visitorEmail && (<span className="text-xs bg-white/10 px-2 py-1 rounded text-white/70">{conv.visitorEmail}</span>)}
+            <Link key={conv.id} href={`/conversations/${conv.id}`}>
+              <Card className="bg-white/5 border-white/10 hover:border-primary/50 transition-colors cursor-pointer group">
+                <CardContent className="p-6 flex items-center justify-between">
+                  <div className="flex items-center gap-6">
+                    <div className={`p-3 rounded-xl border ${conv.channel === 'whatsapp' ? 'bg-green-500/20 border-green-500/30' : 'bg-primary/20 border-primary/30'}`}>
+                      {conv.channel === 'whatsapp' ? <Smartphone className="h-6 w-6 text-green-400" /> : <Monitor className="h-6 w-6 text-primary" />}
                     </div>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1"><CalendarIcon className="h-3 w-3" /> {format(new Date(conv.createdAt), "MMM d, yyyy h:mm a")}</span>
-                      <span>•</span>
-                      <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" /> {conv.messageCount} messages</span>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-white text-lg">{conv.visitor_name || conv.visitorName || 'Anonymous Visitor'}</span>
+                        {(conv.visitor_email || conv.visitorEmail) && (<span className="text-xs bg-white/10 px-2 py-1 rounded text-white/70">{conv.visitor_email || conv.visitorEmail}</span>)}
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                        <span className="flex items-center gap-1"><CalendarIcon className="h-3 w-3" /> {format(new Date(conv.created_at || conv.createdAt), "MMM d, yyyy h:mm a")}</span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" /> {conv.message_count || conv.messageCount || 0} messages</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="hidden sm:block text-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium text-sm">View Chat &rarr;</div>
-              </CardContent>
-            </Card>
+                  <div className="hidden sm:flex items-center gap-1 text-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium text-sm">
+                    View Chat <ArrowRight className="h-4 w-4" />
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
           ))}
         </div>
       )}

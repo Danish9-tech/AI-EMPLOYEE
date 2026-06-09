@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useRef } from "react";
+import { createContext, useContext, useEffect, useState, useRef, lazy, Suspense } from "react";
 import { Switch, Route, useLocation, Router as WouterRouter } from 'wouter';
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
@@ -6,24 +6,24 @@ import { Toaster } from "@/components/ui/toaster";
 import { supabase } from "./lib/supabase";
 import { useAuth } from "./hooks/useAuth";
 import type { Session, User } from "@supabase/supabase-js";
-
-import Landing from "./pages/landing";
-import Dashboard from "./pages/dashboard";
-import Assistants from "./pages/assistants";
-import AssistantNew from "./pages/assistant-new";
-import AssistantDetail from "./pages/assistant-detail";
-import Conversations from "./pages/conversations";
-import Leads from "./pages/leads";
-import Appointments from "./pages/appointments";
-import Marketplace from "./pages/marketplace";
-import Reports from "./pages/reports";
-import Onboarding from "./pages/onboarding";
-import ChatDetail from "./pages/chat";
-import WidgetPage from "./pages/widget";
-import WhatsApp from "./pages/whatsapp";
-import Subscription from "./pages/subscription";
-import Settings from "./pages/settings";
 import { AppLayout } from "./components/layout/app-layout";
+
+const Dashboard = lazy(() => import("./pages/dashboard"));
+const Assistants = lazy(() => import("./pages/assistants"));
+const AssistantNew = lazy(() => import("./pages/assistant-new"));
+const AssistantDetail = lazy(() => import("./pages/assistant-detail"));
+const Conversations = lazy(() => import("./pages/conversations"));
+const Leads = lazy(() => import("./pages/leads"));
+const Appointments = lazy(() => import("./pages/appointments"));
+const Marketplace = lazy(() => import("./pages/marketplace"));
+const Reports = lazy(() => import("./pages/reports"));
+const Onboarding = lazy(() => import("./pages/onboarding"));
+const ChatDetail = lazy(() => import("./pages/chat"));
+const WidgetPage = lazy(() => import("./pages/widget"));
+const WhatsApp = lazy(() => import("./pages/whatsapp"));
+const Subscription = lazy(() => import("./pages/subscription"));
+const Settings = lazy(() => import("./pages/settings"));
+const Landing = lazy(() => import("./pages/landing"));
 
 const basePath = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
@@ -42,12 +42,6 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export const useAuthContext = () => useContext(AuthContext);
-
-function stripBase(path: string): string {
-  return basePath && path.startsWith(basePath)
-    ? path.slice(basePath.length) || "/"
-    : path;
-}
 
 function SignInPage() {
   const [, setLocation] = useLocation();
@@ -201,7 +195,7 @@ function SignUpPage() {
         </form>
         <p className="text-center text-sm text-muted-foreground">
           Already have an account?{" "}
-          <a href="/sign-in" className="text-primary hover:underline">Sign In</a>
+          <a href="/sign-up" className="text-primary hover:underline">Sign In</a>
         </p>
       </div>
     </div>
@@ -239,7 +233,11 @@ function HomeRedirect() {
     }
   }, [isLoading, user, setLocation]);
 
-  return <Landing />;
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="text-primary animate-pulse text-lg">Loading...</div></div>}>
+      <Landing />
+    </Suspense>
+  );
 }
 
 function ProtectedRoute({ component: Component }: { component: any }) {
@@ -260,7 +258,13 @@ function ProtectedRoute({ component: Component }: { component: any }) {
   if (!user) return null;
   return (
     <AppLayout>
-      <Component />
+      <Suspense fallback={
+        <div className="flex items-center justify-center h-[50vh]">
+          <div className="text-primary animate-pulse text-lg">Loading...</div>
+        </div>
+      }>
+        <Component />
+      </Suspense>
     </AppLayout>
   );
 }
@@ -291,7 +295,11 @@ function AppRoutes() {
       <Route path="/reports" component={() => <ProtectedRoute component={Reports} />} />
       <Route path="/onboarding" component={() => <ProtectedRoute component={Onboarding} />} />
       <Route path="/chat/:id" component={() => <ProtectedRoute component={ChatDetail} />} />
-      <Route path="/widget/:id" component={WidgetPage} />
+      <Route path="/widget/:id" component={() => (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="text-primary animate-pulse text-lg">Loading...</div></div>}>
+          <WidgetPage />
+        </Suspense>
+      )} />
       <Route path="/whatsapp" component={() => <ProtectedRoute component={WhatsApp} />} />
       <Route path="/subscription" component={() => <ProtectedRoute component={Subscription} />} />
       <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />

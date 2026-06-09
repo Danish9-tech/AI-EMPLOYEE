@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,21 +21,18 @@ export default function Dashboard() {
     queryFn: () => api.listAssistants(),
   });
 
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[50vh] text-center">
-        <Activity className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-2xl font-bold text-white mb-2">Failed to load stats</h2>
-        <p className="text-muted-foreground">Please try again later.</p>
-      </div>
-    );
-  }
+  const { data: weeklyReport } = useQuery({
+    queryKey: ["weeklyReport"],
+    queryFn: () => api.getWeeklyReport(),
+  });
 
-  const funnelData = [
+  const funnelData = useMemo(() => [
     { name: "Conversations", value: stats?.totalConversations || 0, color: "#3b82f6" },
     { name: "Leads", value: stats?.totalLeads || 0, color: "#8b5cf6" },
     { name: "Appointments", value: stats?.totalAppointments || 0, color: "#10b981" },
-  ];
+  ], [stats]);
+
+  const weeklyChartData = useMemo(() => weeklyReport?.dailyChart || [], [weeklyReport]);
 
   const dropOff = (prev: number, curr: number) => {
     if (prev === 0) return "0%";
@@ -47,6 +45,16 @@ export default function Dashboard() {
     await navigator.clipboard.writeText(`<script src="https://${window.location.hostname}/widget.js" data-id="${id}"></script>`);
     toast({ title: "Embed code copied" });
   };
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[50vh] text-center">
+        <Activity className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-2xl font-bold text-white mb-2">Failed to load stats</h2>
+        <p className="text-muted-foreground">Please try again later.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -139,10 +147,14 @@ export default function Dashboard() {
           <CardContent>
             {isLoading ? (
               <Skeleton className="h-40 bg-white/10" />
+            ) : weeklyChartData.length === 0 ? (
+              <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">
+                No conversations this week
+              </div>
             ) : (
               <div className="h-48">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={[]}>
+                  <LineChart data={weeklyChartData}>
                     <XAxis dataKey="date" stroke="#6b7280" fontSize={11} />
                     <YAxis stroke="#6b7280" fontSize={11} allowDecimals={false} />
                     <Tooltip contentStyle={{ background: "#1a1a2e", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#fff" }} />
