@@ -21,6 +21,7 @@ const Onboarding = lazy(() => import("./pages/onboarding"));
 const ChatDetail = lazy(() => import("./pages/chat"));
 const WidgetPage = lazy(() => import("./pages/widget"));
 const WhatsApp = lazy(() => import("./pages/whatsapp"));
+const Channels = lazy(() => import("./pages/channels"));
 const Subscription = lazy(() => import("./pages/subscription"));
 const Settings = lazy(() => import("./pages/settings"));
 const Landing = lazy(() => import("./pages/landing"));
@@ -300,6 +301,7 @@ function AppRoutes() {
           <WidgetPage />
         </Suspense>
       )} />
+      <Route path="/channels" component={() => <ProtectedRoute component={Channels} />} />
       <Route path="/whatsapp" component={() => <ProtectedRoute component={WhatsApp} />} />
       <Route path="/subscription" component={() => <ProtectedRoute component={Subscription} />} />
       <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />

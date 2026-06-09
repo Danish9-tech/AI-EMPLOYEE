@@ -38,19 +38,57 @@ export default function Reports() {
   };
 
   const handleExport = () => {
-    const data = {
-      generated: new Date().toISOString(),
-      current: curr,
-      previous: prev,
-      dailyChart: report?.dailyChart || [],
-      unanswered: report?.unanswered || [],
-      recommendations: report?.recommendations || [],
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const lines: string[] = [];
+    const h = (s: string) => lines.push(s);
+    h("========================================");
+    h("  AI EMPLOYEE - WEEKLY PERFORMANCE REPORT");
+    h(`  Generated: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`);
+    h("========================================");
+    h("");
+    h("CURRENT WEEK");
+    h("  Conversations:    " + (curr.conversations ?? "—"));
+    h("  Leads:            " + (curr.leads ?? "—"));
+    h("  Appointments:     " + (curr.appointments ?? "—"));
+    h("  Conversion Rate:  " + (curr.conversionRate != null ? curr.conversionRate + "%" : "—"));
+    h("  Missed Revenue:   $" + ((curr.missedRevenue || 0).toLocaleString()));
+    h("");
+    h("PREVIOUS WEEK");
+    h("  Conversations:    " + (prev.conversations ?? "—"));
+    h("  Leads:            " + (prev.leads ?? "—"));
+    h("  Appointments:     " + (prev.appointments ?? "—"));
+    h("  Conversion Rate:  " + (prev.conversionRate != null ? prev.conversionRate + "%" : "—"));
+    h("  Missed Revenue:   $" + ((prev.missedRevenue || 0).toLocaleString()));
+    h("");
+    const chart = report?.dailyChart || [];
+    if (chart.length > 0) {
+      h("DAILY CONVERSATIONS");
+      for (const d of chart) {
+        h(`  ${d.date}: ${d.count}`);
+      }
+      h("");
+    }
+    const unanswered = report?.unanswered || [];
+    if (unanswered.length > 0) {
+      h("UNANSWERED QUESTIONS");
+      for (const q of unanswered.slice(0, 5)) {
+        h(`  - ${q.content}`);
+      }
+      h("");
+    }
+    const recs = report?.recommendations || [];
+    if (recs.length > 0) {
+      h("RECOMMENDATIONS");
+      for (const r of recs) {
+        h(`  * ${r}`);
+      }
+      h("");
+    }
+    h("========================================");
+    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `ai-employee-report-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `ai-employee-report-${new Date().toISOString().slice(0, 10)}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -63,7 +101,7 @@ export default function Reports() {
           <p className="text-muted-foreground">Weekly performance analytics for your AI sales team.</p>
         </div>
         <Button variant="outline" className="border-primary/30 text-white hover:bg-primary/10" onClick={handleExport} disabled={isLoading}>
-          <Download className="mr-2 h-4 w-4" /> Export JSON
+          <Download className="mr-2 h-4 w-4" /> Export Report
         </Button>
       </div>
 

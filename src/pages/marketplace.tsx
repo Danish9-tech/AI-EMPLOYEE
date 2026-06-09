@@ -20,12 +20,16 @@ export default function Marketplace() {
 
   const installMutation = useMutation({
     mutationFn: (templateId: number) => api.installMarketplaceTemplate(templateId),
-    onSuccess: () => {
+    onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["assistants"] });
-      toast({ title: "Template installed", description: "Your new assistant is ready to configure." });
+      if (result?._knowledgeCopied === false) {
+        toast({ title: "Template installed", description: "Knowledge base could not be copied. You can add it manually.", variant: "default" });
+      } else {
+        toast({ title: "Template installed", description: "Your new assistant is ready to configure." });
+      }
     },
-    onError: () => {
-      toast({ title: "Install failed", description: "Please try again.", variant: "destructive" });
+    onError: (e: any) => {
+      toast({ title: "Install failed", description: e.message || "Please try again.", variant: "destructive" });
     },
   });
 

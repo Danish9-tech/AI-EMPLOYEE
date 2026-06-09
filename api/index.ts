@@ -65,12 +65,28 @@ function toSnake(val: string): string {
   return val.replace(/[A-Z]/g, (l) => `_${l.toLowerCase()}`);
 }
 
+function toCamel(val: string): string {
+  return val.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+}
+
 function mapKeys(obj: Record<string, any>): Record<string, any> {
   const result: Record<string, any> = {};
   for (const key of Object.keys(obj || {})) {
     result[toSnake(key)] = obj[key];
   }
   return result;
+}
+
+function mapKeysCamel(obj: any): any {
+  if (Array.isArray(obj)) return obj.map(mapKeysCamel);
+  if (obj && typeof obj === 'object' && !(obj instanceof Date)) {
+    const result: Record<string, any> = {};
+    for (const key of Object.keys(obj)) {
+      result[toCamel(key)] = mapKeysCamel(obj[key]);
+    }
+    return result;
+  }
+  return obj;
 }
 
 function getAllowedOrigins(): string[] {
@@ -116,6 +132,9 @@ function getQueryParam(req: VercelRequest, name: string): string | undefined {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCors(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  const origJson = res.json.bind(res);
+  res.json = (data: any) => origJson(mapKeysCamel(data));
 
   const url = req.url || '';
   const path = url.split('?')[0];
@@ -432,20 +451,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }).select().single();
       if (insertError) return res.status(500).json({ error: insertError.message });
 
-      const { data: templateKnowledge } = await supabase.from('knowledge').select('*').eq('assistant_id', template.assistant_id);
-      if (templateKnowledge && templateKnowledge.length > 0) {
-        const knowledgeInserts = templateKnowledge.map((k: any) => ({
-          user_id: userId,
-          assistant_id: newAssistant.id,
-          title: k.title,
-          content: k.content,
-          type: k.type || 'manual',
-        }));
-        await supabase.from('knowledge').insert(knowledgeInserts);
+      let knowledgeCopied = false;
+      if (template.assistant_id) {
+        const { data: templateKnowledge } = await supabase.from('knowledge').select('*').eq('assistant_id', template.assistant_id);
+        if (templateKnowledge && templateKnowledge.length > 0) {
+          const knowledgeInserts = templateKnowledge.map((k: any) => ({
+            user_id: userId,
+            assistant_id: newAssistant.id,
+            title: k.title,
+            content: k.content,
+            type: k.type || 'manual',
+          }));
+          const { error: knowledgeError } = await supabase.from('knowledge').insert(knowledgeInserts);
+          if (!knowledgeError) knowledgeCopied = true;
+        }
       }
 
       await supabase.from('marketplace_templates').update({ installs: (template.installs || 0) + 1 }).eq('id', templateId);
-      return res.json(newAssistant);
+      return res.json({ ...newAssistant, _knowledgeCopied: knowledgeCopied });
     }
 
     if (path === '/api/marketplace/publish' && req.method === 'POST') {
@@ -583,6 +606,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // ---- WHATSAPP CONFIG ----
+    // ---- CHANNEL WAITLIST ----
+    if (path === '/api/channel-waitlist' && req.method === 'POST') {
+      const { channel, email } = req.body || {};
+      if (!channel || !email) return res.status(400).json({ error: 'channel and email required' });
+      const { error } = await supabase.from('channel_waitlist').insert({
+        channel,
+        email,
+        ip_address: ip,
+      }).maybeSingle();
+      if (error && !error.message?.includes('relation') && !error.message?.includes('does not exist')) {
+        return res.status(500).json({ error: error.message });
+      }
+      return res.json({ success: true });
+    }
+
     if (path === '/api/whatsapp/config' && req.method === 'GET') {
       const userId = await requireUserId(req, res);
       if (!userId) return;

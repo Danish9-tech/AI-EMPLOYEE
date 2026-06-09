@@ -3,16 +3,17 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
-import { Plus, Bot, Power, PowerOff, Settings, Code, Activity } from "lucide-react";
+import { Plus, Bot, Power, PowerOff, Settings, Code, Activity, Trash2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { api, apiFetch } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 
 export default function Assistants() {
@@ -32,6 +33,17 @@ export default function Assistants() {
   const { toast } = useToast();
   const [embedOpen, setEmbedOpen] = useState(false);
   const [selectedAssistant, setSelectedAssistant] = useState<any>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => apiFetch(`/api/assistants/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["assistants"] });
+      toast({ title: "Assistant deleted" });
+      setDeleteTarget(null);
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
 
   const toggleStatus = (id: number, currentStatus: boolean) => {
     updateMutation.mutate({ id, data: { isActive: !currentStatus } }, {
@@ -136,6 +148,14 @@ export default function Assistants() {
                   >
                     {assistant.isActive ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
                   </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                    onClick={() => setDeleteTarget(assistant)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -164,6 +184,21 @@ export default function Assistants() {
           >
             Copy Code
           </Button>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <DialogContent className="bg-background border-red-500/30 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-red-400">Delete Assistant</DialogTitle>
+            <DialogDescription>Are you sure you want to delete "{deleteTarget?.name}"? This action cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)} className="text-muted-foreground">Cancel</Button>
+            <Button variant="destructive" onClick={() => deleteMutation.mutate(deleteTarget.id)} disabled={deleteMutation.isPending}>
+              {deleteMutation.isPending ? "Deleting..." : "Delete Forever"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

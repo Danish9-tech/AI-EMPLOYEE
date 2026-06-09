@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "wouter";
-import { ArrowLeft, BookOpen, MessageSquare, Users, Calendar, Settings, Activity, Plus, Trash2, Copy, Upload, ExternalLink, Store, Bot } from "lucide-react";
+import { Link, useParams, useLocation } from "wouter";
+import { ArrowLeft, BookOpen, MessageSquare, Users, Calendar, Settings, Activity, Plus, Trash2, Copy, Upload, ExternalLink, Store, Bot, Power, PowerOff, Loader2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,13 +12,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { api, apiFetch } from "@/lib/api";
 
 export default function AssistantDetail() {
   const params = useParams();
   const id = Number(params.id);
+  const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [knowledgeTitle, setKnowledgeTitle] = useState("");
   const [knowledgeContent, setKnowledgeContent] = useState("");
@@ -27,6 +29,14 @@ export default function AssistantDetail() {
   const [pubDesc, setPubDesc] = useState("");
   const [pubCategory, setPubCategory] = useState("General");
   const [pubIndustry, setPubIndustry] = useState("");
+  const [showDelete, setShowDelete] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const [editName, setEditName] = useState("");
+  const [editBusinessName, setEditBusinessName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editTone, setEditTone] = useState("friendly");
+  const [editWidgetColor, setEditWidgetColor] = useState("#00d4ff");
 
   const { data: assistant, isLoading: loadingAss, error } = useQuery({
     queryKey: ["assistant", id],
@@ -52,6 +62,16 @@ export default function AssistantDetail() {
     enabled: !!id,
   });
 
+  const updateMutation = useMutation({
+    mutationFn: (data: any) => api.updateAssistant(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["assistant", id] });
+      queryClient.invalidateQueries({ queryKey: ["assistants"] });
+      toast({ title: "Assistant updated" });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const addKnowledge = useMutation({
     mutationFn: () => api.createAssistantKnowledge(id, { title: knowledgeTitle, content: knowledgeContent, type: "manual" }),
     onSuccess: () => {
@@ -70,6 +90,16 @@ export default function AssistantDetail() {
     },
   });
 
+  const deleteAssistant = useMutation({
+    mutationFn: () => apiFetch(`/api/assistants/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["assistants"] });
+      toast({ title: "Assistant deleted" });
+      setLocation("/assistants");
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const publishMutation = useMutation({
     mutationFn: () => api.publishMarketplaceTemplate({ assistantId: id, title: pubTitle, description: pubDesc, category: pubCategory, industry: pubIndustry }),
     onSuccess: () => {
@@ -82,6 +112,43 @@ export default function AssistantDetail() {
   const copyEmbed = () => {
     navigator.clipboard.writeText(`<script src="https://${window.location.hostname}/widget.js" data-id="${id}"></script>`);
     toast({ title: "Embed code copied" });
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      let text = "";
+      if (file.name.endsWith(".txt")) {
+        text = await file.text();
+      } else if (file.name.endsWith(".pdf")) {
+        const arrayBuffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+        text = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "").slice(0, 50000);
+      } else if (file.name.endsWith(".docx")) {
+        const arrayBuffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+        const match = text.match(/<w:t[^>]*>([^<]+)<\/w:t>/g);
+        if (match) {
+          text = match.map((m: string) => m.replace(/<\/?w:t[^>]*>/g, "")).join(" ");
+        } else {
+          text = text.replace(/[^\x20-\x7E\n]/g, " ").replace(/\s+/g, " ").trim();
+        }
+        text = text.slice(0, 50000);
+      }
+      const title = file.name.replace(/\.[^.]+$/, "");
+      await api.createAssistantKnowledge(id, { title, content: text || "(empty file)", type: "manual" });
+      queryClient.invalidateQueries({ queryKey: ["assistantKnowledge", id] });
+      toast({ title: "File uploaded", description: `${file.name} imported successfully.` });
+    } catch {
+      toast({ title: "Upload failed", description: "Could not read file. Try pasting the content manually.", variant: "destructive" });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   if (error) {
@@ -171,9 +238,22 @@ export default function AssistantDetail() {
                 <Label className="text-white/80">Content</Label>
                 <Textarea value={knowledgeContent} onChange={(e) => setKnowledgeContent(e.target.value)} placeholder="What should your assistant know?" rows={4} className="bg-black/40 border-white/10 text-white" />
               </div>
-              <Button onClick={() => addKnowledge.mutate()} disabled={!knowledgeTitle || !knowledgeContent || addKnowledge.isPending} className="bg-primary text-black hover:bg-primary/90">
-                <Plus className="mr-2 h-4 w-4" /> Add Knowledge
-              </Button>
+              <div className="flex gap-3">
+                <Button onClick={() => addKnowledge.mutate()} disabled={!knowledgeTitle || !knowledgeContent || addKnowledge.isPending} className="bg-primary text-black hover:bg-primary/90">
+                  <Plus className="mr-2 h-4 w-4" /> Add Knowledge
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".txt,.pdf,.docx"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+                <Button variant="outline" className="border-primary/30 text-white hover:bg-primary/10" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+                  {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                  {uploading ? "Uploading..." : "Import File"}
+                </Button>
+              </div>
             </div>
             {loadingKnow ? (
               <Skeleton className="h-32 bg-white/10" />
@@ -239,8 +319,74 @@ export default function AssistantDetail() {
           </TabsContent>
 
           <TabsContent value="settings" className="mt-0">
-            <h2 className="text-xl font-semibold text-white mb-4">Settings</h2>
-            <p className="text-muted-foreground">Assistant settings will be available here.</p>
+            <h2 className="text-xl font-semibold text-white mb-6">Settings</h2>
+            {!loadingAss && assistant && (
+              <div className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label className="text-white/80">Assistant Name</Label>
+                    <Input defaultValue={assistant.name} onChange={(e) => setEditName(e.target.value)} onFocus={(e) => setEditName(e.target.value)} className="bg-black/40 border-white/10 text-white" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label className="text-white/80">Business Name</Label>
+                    <Input defaultValue={assistant.businessName || assistant.business_name} onChange={(e) => setEditBusinessName(e.target.value)} onFocus={(e) => setEditBusinessName(e.target.value)} className="bg-black/40 border-white/10 text-white" />
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label className="text-white/80">Description</Label>
+                  <Textarea defaultValue={assistant.description} onChange={(e) => setEditDescription(e.target.value)} onFocus={(e) => setEditDescription(e.target.value)} rows={3} className="bg-black/40 border-white/10 text-white" />
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label className="text-white/80">Tone</Label>
+                    <Select defaultValue={assistant.tone || "friendly"} onValueChange={setEditTone}>
+                      <SelectTrigger className="bg-black/40 border-white/10 text-white"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-background border-white/10">
+                        <SelectItem value="friendly" className="text-white">Friendly</SelectItem>
+                        <SelectItem value="professional" className="text-white">Professional</SelectItem>
+                        <SelectItem value="casual" className="text-white">Casual</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label className="text-white/80">Widget Color</Label>
+                    <div className="flex gap-2 items-center">
+                      <Input type="color" defaultValue={assistant.widget_color || "#00d4ff"} onChange={(e) => setEditWidgetColor(e.target.value)} className="w-12 h-10 p-1 bg-black/40 border-white/10 cursor-pointer" />
+                      <Input value={editWidgetColor} onChange={(e) => setEditWidgetColor(e.target.value)} className="flex-1 bg-black/40 border-white/10 text-white font-mono" />
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => {
+                    const data: any = {};
+                    if (editName) data.name = editName;
+                    if (editBusinessName) data.businessName = editBusinessName;
+                    if (editDescription) data.description = editDescription;
+                    data.tone = editTone;
+                    data.widget_color = editWidgetColor;
+                    updateMutation.mutate(data);
+                  }}
+                  disabled={updateMutation.isPending}
+                  className="bg-primary text-black hover:bg-primary/90"
+                >
+                  {updateMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </div>
+            )}
+            {loadingAss && <Skeleton className="h-48 bg-white/10" />}
+
+            <div className="mt-12 pt-8 border-t border-white/10">
+              <h3 className="text-lg font-semibold text-red-400 mb-4">Danger Zone</h3>
+              <div className="flex items-center justify-between p-4 bg-red-500/5 border border-red-500/20 rounded-lg">
+                <div>
+                  <p className="text-white font-medium">Delete this assistant</p>
+                  <p className="text-sm text-muted-foreground">This action cannot be undone. All conversations and data will be permanently removed.</p>
+                </div>
+                <Button variant="destructive" className="shrink-0 ml-4" onClick={() => setShowDelete(true)}>
+                  <Trash2 className="mr-2 h-4 w-4" /> Delete
+                </Button>
+              </div>
+            </div>
           </TabsContent>
         </div>
       </Tabs>
@@ -280,6 +426,21 @@ export default function AssistantDetail() {
             <Button variant="ghost" onClick={() => setShowPublish(false)} className="text-muted-foreground">Cancel</Button>
             <Button onClick={() => publishMutation.mutate()} disabled={!pubTitle || publishMutation.isPending} className="bg-primary text-black hover:bg-primary/90">
               {publishMutation.isPending ? "Publishing..." : "Publish"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDelete} onOpenChange={setShowDelete}>
+        <DialogContent className="bg-background border-red-500/30 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-red-400">Delete Assistant</DialogTitle>
+            <DialogDescription>Are you sure you want to delete "{assistant?.name}"? This action cannot be undone. All conversations, leads, and knowledge associated with this assistant will be permanently deleted.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowDelete(false)} className="text-muted-foreground">Cancel</Button>
+            <Button variant="destructive" onClick={() => { setShowDelete(false); deleteAssistant.mutate(); }} disabled={deleteAssistant.isPending}>
+              {deleteAssistant.isPending ? "Deleting..." : "Delete Forever"}
             </Button>
           </DialogFooter>
         </DialogContent>
