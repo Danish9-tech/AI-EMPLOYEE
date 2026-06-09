@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams } from "wouter";
-import { Bot, Send, X, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
+import { Bot, Send, X, Loader2, AlertTriangle, RefreshCw, Mic, MicOff, Volume2 } from "lucide-react";
 
 export default function WidgetPage() {
   const params = useParams();
@@ -15,6 +15,61 @@ export default function WidgetPage() {
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const speechSupported = useRef(false);
+  const [speakingId, setSpeakingId] = useState<number | null>(null);
+
+  useEffect(() => {
+    speechSupported.current = !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+  }, []);
+
+  const speak = useCallback((text: string, index: number) => {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.onend = () => setSpeakingId(null);
+    utterance.onerror = () => setSpeakingId(null);
+    setSpeakingId(index);
+    utterance.rate = 1.1;
+    utterance.pitch = 1;
+    window.speechSynthesis.speak(utterance);
+  }, []);
+
+  const toggleRecording = useCallback(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    if (isRecording) {
+      recognitionRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setInput(transcript);
+      setIsRecording(false);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    };
+
+    recognition.onerror = () => {
+      setIsRecording(false);
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsRecording(true);
+  }, [isRecording]);
 
   const loadAssistant = () => {
     if (!assistantId) return;
@@ -64,7 +119,12 @@ export default function WidgetPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        setMessages(prev => [...prev, { role: "assistant", content: data.reply }]);
+        const reply = data.reply;
+        setMessages(prev => {
+          const idx = prev.length + 1;
+          setTimeout(() => speak(reply, idx), 100);
+          return [...prev, { role: "assistant", content: reply }];
+        });
       } else {
         const errData = await res.json().catch(() => ({ error: 'Request failed' }));
         setMessages(prev => [...prev, { role: "assistant", content: errData.error || "Sorry, I couldn't process that. Please try again." }]);
@@ -146,10 +206,23 @@ export default function WidgetPage() {
         <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ minHeight: 300, maxHeight: 400 }}>
           {messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
+              <div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm relative group ${
                 msg.role === "user" ? "bg-primary text-black" : "bg-white/10 text-white"
               }`}>
                 {msg.content}
+                {msg.role === "assistant" && speechSupported.current && (
+                  <button
+                    onClick={() => speak(msg.content, i)}
+                    className="absolute -bottom-5 right-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded bg-white/10 hover:bg-white/20"
+                    title={speakingId === i ? "Speaking..." : "Read aloud"}
+                  >
+                    {speakingId === i ? (
+                      <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                    ) : (
+                      <Volume2 className="h-3 w-3 text-muted-foreground" />
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -168,6 +241,21 @@ export default function WidgetPage() {
             onSubmit={(e) => { e.preventDefault(); sendMessage(); }}
             className="flex gap-2"
           >
+            {speechSupported.current && (
+              <button
+                type="button"
+                onClick={toggleRecording}
+                disabled={sending}
+                className={`rounded-lg px-2 py-2 transition-colors ${
+                  isRecording
+                    ? "bg-red-500/20 text-red-400 mic-pulse"
+                    : "bg-black/40 border border-white/10 text-muted-foreground hover:text-white hover:border-white/30"
+                }`}
+                title={isRecording ? "Stop recording" : "Voice input"}
+              >
+                {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </button>
+            )}
             <input
               ref={inputRef}
               value={input}
@@ -185,6 +273,17 @@ export default function WidgetPage() {
             </button>
           </form>
         </div>
+
+        <style>{`
+          @keyframes mic-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+            50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+          }
+          .mic-pulse {
+            animation: mic-pulse 1.2s ease-in-out infinite;
+            border-color: rgba(239, 68, 68, 0.5);
+          }
+        `}</style>
 
         {showBadge && (
           <a
