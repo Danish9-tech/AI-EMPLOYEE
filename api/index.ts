@@ -41,41 +41,83 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const userId = await getUserId(req);
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-      const [assistantsRes, conversationsRes, leadsRes] = await Promise.all([
+      const [assistantsRes, conversationsRes, leadsRes, appointmentsRes, profileRes] = await Promise.all([
         supabase.from('assistants').select('id', { count: 'exact', head: true }).eq('user_id', userId),
         supabase.from('conversations').select('id', { count: 'exact', head: true }).eq('user_id', userId),
         supabase.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+        supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+        supabase.from('profiles').select('avg_sale_value').eq('user_id', userId).maybeSingle(),
       ]);
 
       const weekAgo = new Date();
       weekAgo.setDate(weekAgo.getDate() - 7);
       const weekStr = weekAgo.toISOString();
+      const twoWeeksAgo = new Date();
+      twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+      const twoWeekStr = twoWeeksAgo.toISOString();
 
-      const [convWeekRes, leadsWeekRes] = await Promise.all([
+      const [convWeekRes, convPrevRes, leadsWeekRes, appointmentsWeekRes] = await Promise.all([
         supabase.from('conversations').select('id').eq('user_id', userId).gte('created_at', weekStr),
+        supabase.from('conversations').select('id').eq('user_id', userId).gte('created_at', twoWeekStr).lt('created_at', weekStr),
         supabase.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', weekStr),
+        supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', weekStr),
       ]);
 
       const weekConvIds = (convWeekRes.data || []).map((c: any) => c.id);
+      const prevConvIds = (convPrevRes.data || []).map((c: any) => c.id);
       let messagesThisWeek = 0;
       if (weekConvIds.length > 0) {
         const { count } = await supabase.from('messages').select('id', { count: 'exact', head: true }).in('conversation_id', weekConvIds);
         messagesThisWeek = count || 0;
       }
 
+      const prevWeekConversations = convPrevRes.count || 0;
       const totalConversations = conversationsRes.count || 0;
       const totalLeads = leadsRes.count || 0;
       const leadsThisWeek = leadsWeekRes.count || 0;
+      const appointmentsThisWeek = appointmentsWeekRes.count || 0;
       const conversionRate = totalConversations > 0 ? (totalLeads / totalConversations) * 100 : 0;
+
+      const unconverted = totalConversations - totalLeads;
+      const avgSaleValue = (profileRes.data as any)?.avg_sale_value || 100;
+      const missedRevenue = unconverted * avgSaleValue;
 
       return res.json({
         totalAssistants: assistantsRes.count || 0,
         totalConversations,
         totalLeads,
+        totalAppointments: appointmentsRes.count || 0,
         messagesThisWeek,
         leadsThisWeek,
+        appointmentsThisWeek,
         conversionRate: Math.round(conversionRate * 10) / 10,
+        prevWeekConversations,
+        unconvertedConversations: unconverted,
+        missedRevenue,
+        avgSaleValue,
       });
+    }
+
+    // ---- PROFILE ----
+    if (path === '/api/profile' && req.method === 'GET') {
+      const userId = await getUserId(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      let { data, error } = await supabase.from('profiles').select('*').eq('user_id', userId).maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) {
+        const { data: inserted, error: insertError } = await supabase.from('profiles').insert({ user_id: userId }).select().single();
+        if (insertError) return res.status(500).json({ error: insertError.message });
+        data = inserted;
+      }
+      return res.json(data);
+    }
+
+    if (path === '/api/profile' && req.method === 'PATCH') {
+      const userId = await getUserId(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const { data, error } = await supabase.from('profiles').update({ ...req.body, updated_at: new Date().toISOString() }).eq('user_id', userId).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data);
     }
 
     // ---- ASSISTANTS ----
@@ -115,12 +157,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
+    // ---- ASSISTANT KNOWLEDGE ----
+    const assistantKnowledgeMatch = path.match(/^\/api\/assistants\/(\d+)\/knowledge$/);
+    if (assistantKnowledgeMatch) {
+      const assistantId = assistantKnowledgeMatch[1];
+      if (req.method === 'GET') {
+        const { data, error } = await supabase.from('knowledge').select('*').eq('assistant_id', assistantId);
+        if (error) return res.status(500).json({ error: error.message });
+        return res.json(data);
+      }
+      if (req.method === 'POST') {
+        const userId = await getUserId(req);
+        if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+        const { data, error } = await supabase.from('knowledge').insert({ ...req.body, user_id: userId, assistant_id: parseInt(assistantId) }).select().single();
+        if (error) return res.status(500).json({ error: error.message });
+        return res.json(data);
+      }
+    }
+
+    const knowledgeItemMatch = path.match(/^\/api\/knowledge\/(\d+)$/);
+    if (knowledgeItemMatch && req.method === 'DELETE') {
+      const { error } = await supabase.from('knowledge').delete().eq('id', knowledgeItemMatch[1]);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(204).end();
+    }
+
     // ---- CONVERSATIONS ----
     if (path === '/api/conversations' && req.method === 'GET') {
       const userId = await getUserId(req);
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
       let query = supabase.from('conversations').select('*').eq('user_id', userId);
-      const assistantId = req.query?.assistantId;
+      const assistantId = (req as any).query?.assistantId;
       if (assistantId) query = query.eq('assistant_id', assistantId);
       const { data, error } = await query;
       if (error) return res.status(500).json({ error: error.message });
@@ -181,8 +248,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (path === '/api/subscriptions' && req.method === 'GET') {
       const userId = await getUserId(req);
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-      const { data, error } = await supabase.from('subscriptions').select('*').eq('user_id', userId).single();
-      if (error) return res.status(404).json({ error: error.message });
+      let { data, error } = await supabase.from('subscriptions').select('*').eq('user_id', userId).maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) {
+        const { data: inserted, error: insertError } = await supabase.from('subscriptions').insert({ user_id: userId, plan: 'free', status: 'active' }).select().single();
+        if (insertError) return res.status(500).json({ error: insertError.message });
+        data = inserted;
+      }
       return res.json(data);
     }
 
@@ -221,7 +293,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!templateId) return res.status(400).json({ error: 'templateId required' });
       const { data: template } = await supabase.from('marketplace_templates').select('*').eq('id', templateId).single();
       if (!template) return res.status(404).json({ error: 'Template not found' });
-      const { data, error } = await supabase.from('assistants').insert({
+
+      const { data: newAssistant, error: insertError } = await supabase.from('assistants').insert({
         user_id: userId,
         name: template.name,
         description: template.description,
@@ -229,8 +302,267 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         config: template.default_config || {},
         is_active: true,
       }).select().single();
+      if (insertError) return res.status(500).json({ error: insertError.message });
+
+      const { data: templateKnowledge } = await supabase.from('knowledge').select('*').eq('assistant_id', template.assistant_id);
+      if (templateKnowledge && templateKnowledge.length > 0) {
+        const knowledgeInserts = templateKnowledge.map((k: any) => ({
+          user_id: userId,
+          assistant_id: newAssistant.id,
+          title: k.title,
+          content: k.content,
+          type: k.type || 'manual',
+        }));
+        await supabase.from('knowledge').insert(knowledgeInserts);
+      }
+
+      await supabase.from('marketplace_templates').update({ installs: (template.installs || 0) + 1 }).eq('id', templateId);
+      return res.json(newAssistant);
+    }
+
+    if (path === '/api/marketplace/publish' && req.method === 'POST') {
+      const userId = await getUserId(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const { assistantId, title, description, category, industry } = req.body || {};
+      if (!assistantId || !title) return res.status(400).json({ error: 'assistantId and title required' });
+      const { data: assistant } = await supabase.from('assistants').select('*').eq('id', assistantId).eq('user_id', userId).single();
+      if (!assistant) return res.status(404).json({ error: 'Assistant not found' });
+
+      const { data, error } = await supabase.from('marketplace_templates').insert({
+        user_id: userId,
+        assistant_id: assistantId,
+        name: title,
+        title,
+        description: description || assistant.description,
+        category: category || 'General',
+        industry,
+        is_published: true,
+        installs: 0,
+      }).select().single();
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
+    }
+
+    // ---- REFERRAL CLICKS ----
+    if (path === '/api/referral_clicks' && req.method === 'GET') {
+      const userId = await getUserId(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const { data: assistants } = await supabase.from('assistants').select('id').eq('user_id', userId);
+      const ids = (assistants || []).map((a: any) => a.id);
+      if (ids.length === 0) return res.json([]);
+      const thisMonth = new Date();
+      thisMonth.setDate(1);
+      const { data, error } = await supabase.from('referral_clicks').select('*').in('assistant_id', ids).gte('created_at', thisMonth.toISOString()).order('created_at', { ascending: false });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data);
+    }
+
+    if (path === '/api/referral_clicks' && req.method === 'POST') {
+      const { assistantId, referrer, pageUrl } = req.body || {};
+      if (!assistantId) return res.status(400).json({ error: 'assistantId required' });
+      const ip = (req.headers['x-forwarded-for'] as string || req.socket?.remoteAddress || '').split(',')[0].trim();
+      const { data, error } = await supabase.from('referral_clicks').insert({
+        assistant_id: assistantId,
+        referrer: referrer || 'widget',
+        page_url: pageUrl || '',
+        ip_address: ip,
+        user_agent: req.headers['user-agent'] || '',
+      }).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data);
+    }
+
+    // ---- REPORTS / WEEKLY ----
+    if (path === '/api/reports/weekly' && req.method === 'GET') {
+      const userId = await getUserId(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const now = new Date();
+      const weekAgo = new Date(now.getTime() - 7 * 86400000);
+      const twoWeeksAgo = new Date(now.getTime() - 14 * 86400000);
+      const weekStr = weekAgo.toISOString();
+      const twoWeekStr = twoWeeksAgo.toISOString();
+
+      const [currConv, prevConv, currLeads, prevLeads, currAppt, prevAppt, convWeek, convPrev, messages, profileRes] = await Promise.all([
+        supabase.from('conversations').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', weekStr),
+        supabase.from('conversations').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', twoWeekStr).lt('created_at', weekStr),
+        supabase.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', weekStr),
+        supabase.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', twoWeekStr).lt('created_at', weekStr),
+        supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', weekStr),
+        supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', twoWeekStr).lt('created_at', weekStr),
+        supabase.from('conversations').select('id, created_at').eq('user_id', userId).gte('created_at', weekStr),
+        supabase.from('conversations').select('id').eq('user_id', userId).gte('created_at', twoWeekStr).lt('created_at', weekStr),
+        supabase.from('messages').select('content, role, conversation_id').in('conversation_id', (convWeek.data || []).map((c: any) => c.id)),
+        supabase.from('profiles').select('avg_sale_value').eq('user_id', userId).maybeSingle(),
+      ]);
+
+      const currConversations = currConv.count || 0;
+      const prevConversations = prevConv.count || 0;
+      const currLeadsCount = currLeads.count || 0;
+      const prevLeadsCount = prevLeads.count || 0;
+      const currAppts = currAppt.count || 0;
+      const prevAppts = prevAppt.count || 0;
+      const convRate = currConversations > 0 ? (currLeadsCount / currConversations) * 100 : 0;
+      const prevConvRate = prevConversations > 0 ? (prevLeadsCount / prevConversations) * 100 : 0;
+      const avgSale = (profileRes.data as any)?.avg_sale_value || 100;
+      const currMissed = (currConversations - currLeadsCount) * avgSale;
+      const prevMissed = (prevConversations - prevLeadsCount) * avgSale;
+
+      const dailyMap: Record<string, number> = {};
+      for (const c of (convWeek.data || [])) {
+        const day = new Date(c.created_at).toISOString().slice(0, 10);
+        dailyMap[day] = (dailyMap[day] || 0) + 1;
+      }
+      const dailyChart = Object.entries(dailyMap).sort(([a], [b]) => a.localeCompare(b)).map(([date, count]) => ({ date, count }));
+
+      const unsurePhrases = ["i don't know", "i'm not sure", "i don't have", "please contact", "i cannot", "i am not sure", "i don't understand"];
+      const unanswered = ((messages.data || []) as any[])
+        .filter((m: any) => m.role === 'assistant' && unsurePhrases.some((p) => (m.content || '').toLowerCase().includes(p)))
+        .slice(0, 10)
+        .map((m: any) => ({ content: m.content, conversation_id: m.conversation_id }));
+
+      const bestDay = Object.entries(dailyMap).sort(([, a], [, b]) => b - a)[0]?.[0] || null;
+
+      const recommendations: string[] = [];
+      if (currConversations > 5 && convRate < 20) {
+        recommendations.push(`Your conversion rate is ${convRate.toFixed(0)}%. Consider adding pricing information and FAQs to your knowledge base.`);
+      }
+      if (currLeadsCount < prevLeadsCount && prevLeadsCount > 0) {
+        const drop = Math.round(((prevLeadsCount - currLeadsCount) / prevLeadsCount) * 100);
+        recommendations.push(`Leads dropped ${drop}% this week. Review your assistant's greeting message and lead capture questions.`);
+      }
+      if (unanswered.length > 3) {
+        recommendations.push(`Your assistant couldn't answer ${unanswered.length} questions. Add these topics to your knowledge base.`);
+      }
+      if (dailyChart.length > 0 && bestDay) {
+        const dayName = new Date(bestDay).toLocaleDateString('en-US', { weekday: 'long' });
+        recommendations.push(`${dayName} is your busiest day. Make sure your assistant is updated with fresh content before ${dayName}.`);
+      }
+      if (recommendations.length === 0) {
+        recommendations.push('Great week! Your assistant is performing well. Keep adding knowledge to improve further.');
+      }
+
+      return res.json({
+        current: { conversations: currConversations, leads: currLeadsCount, appointments: currAppts, conversionRate: Math.round(convRate * 10) / 10, missedRevenue: currMissed },
+        previous: { conversations: prevConversations, leads: prevLeadsCount, appointments: prevAppts, conversionRate: Math.round(prevConvRate * 10) / 10, missedRevenue: prevMissed },
+        dailyChart,
+        unanswered,
+        bestDay,
+        recommendations,
+      });
+    }
+
+    // ---- WHATSAPP CONFIG ----
+    if (path === '/api/whatsapp/config' && req.method === 'GET') {
+      const userId = await getUserId(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const { data, error } = await supabase.from('subscriptions').select('whatsapp_enabled, whatsapp_phone_number, whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_webhook_verify_token').eq('user_id', userId).single();
+      if (error) return res.status(404).json({ enabled: false, phoneNumber: null, phoneNumberId: null, webhookUrl: '' });
+      return res.json({
+        enabled: data.whatsapp_enabled || false,
+        phoneNumber: data.whatsapp_phone_number || null,
+        phoneNumberId: data.whatsapp_phone_number_id || null,
+        webhookUrl: data.whatsapp_webhook_verify_token || '',
+      });
+    }
+
+    if (path === '/api/whatsapp/config' && req.method === 'PATCH') {
+      const userId = await getUserId(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const { phoneNumberId, businessAccountId, accessToken, phoneNumber } = req.body || {};
+      const { data, error } = await supabase.from('subscriptions').update({
+        whatsapp_enabled: true,
+        whatsapp_phone_number_id: phoneNumberId,
+        whatsapp_business_account_id: businessAccountId,
+        whatsapp_access_token: accessToken,
+        whatsapp_phone_number: phoneNumber,
+        whatsapp_webhook_verify_token: `${process.env.VITE_SUPABASE_URL || ''}/functions/v1/whatsapp-webhook`,
+      }).eq('user_id', userId).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ enabled: true, phoneNumber: data.whatsapp_phone_number, phoneNumberId: data.whatsapp_phone_number_id, webhookUrl: data.whatsapp_webhook_verify_token });
+    }
+
+    if (path === '/api/whatsapp/config' && req.method === 'DELETE') {
+      const userId = await getUserId(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const { error } = await supabase.from('subscriptions').update({
+        whatsapp_enabled: false,
+        whatsapp_phone_number_id: null,
+        whatsapp_business_account_id: null,
+        whatsapp_access_token: null,
+        whatsapp_phone_number: null,
+      }).eq('user_id', userId);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ enabled: false });
+    }
+
+    // ---- PUBLIC CHAT ----
+    if (path === '/api/chat' && req.method === 'POST') {
+      const { assistantId, message } = req.body || {};
+      if (!assistantId || !message) return res.status(400).json({ error: 'assistantId and message required' });
+      const { data: assistant } = await supabase.from('assistants').select('*').eq('id', assistantId).single();
+      if (!assistant) return res.status(404).json({ error: 'Assistant not found' });
+
+      let reply = "";
+      try {
+        const groqKey = process.env.GROQ_API_KEY || '';
+        if (groqKey) {
+          const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: 'llama-3.3-70b-versatile',
+              messages: [
+                { role: 'system', content: `You are ${assistant.name}, a helpful AI assistant for ${assistant.business_name || 'a business'}. ${assistant.description || ''}. Respond conversationally and helpfully.` },
+                { role: 'user', content: message },
+              ],
+              max_tokens: 500,
+            }),
+          });
+          const groqData = await groqRes.json();
+          reply = groqData.choices?.[0]?.message?.content || "I'm not sure how to respond to that.";
+        } else {
+          reply = `This is a simulated response from ${assistant.name}. Connect a Groq API key to enable AI responses.`;
+        }
+
+        let conversationId: number | null = null;
+        const { data: existingConv } = await supabase.from('conversations').select('id').eq('assistant_id', assistantId).eq('status', 'active').maybeSingle();
+        if (existingConv) {
+          conversationId = existingConv.id;
+          await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
+        } else {
+          const { data: newConv } = await supabase.from('conversations').insert({ assistant_id: assistantId, user_id: assistant.user_id, status: 'active' }).select().single();
+          conversationId = newConv?.id || null;
+        }
+
+        if (conversationId) {
+          await supabase.from('messages').insert([
+            { conversation_id: conversationId, role: 'user', content: message },
+            { conversation_id: conversationId, role: 'assistant', content: reply },
+          ]);
+        }
+      } catch (e) {
+        reply = "I'm having trouble connecting right now. Please try again.";
+      }
+
+      return res.json({ reply });
+    }
+
+    // ---- PUBLIC WIDGET ----
+    if (path === '/api/widget' && req.method === 'GET') {
+      const assistantId = (req as any).query?.assistantId;
+      if (!assistantId) return res.status(400).json({ error: 'assistantId required' });
+      const { data: assistant } = await supabase.from('assistants').select('*').eq('id', assistantId).single();
+      if (!assistant) return res.status(404).json({ error: 'Assistant not found' });
+      const { data: sub } = await supabase.from('subscriptions').select('plan').eq('user_id', assistant.user_id).maybeSingle();
+      const plan = sub?.plan || 'free';
+      return res.json({
+        id: assistant.id,
+        name: assistant.name,
+        config: assistant.config || {},
+        isActive: assistant.is_active,
+        plan,
+      });
     }
 
     return res.status(404).json({ error: 'Not found' });

@@ -25,6 +25,11 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
 export const api = {
   getDashboardStats: () => apiFetch<any>("/api/dashboard/stats"),
 
+  // Profile
+  getProfile: () => apiFetch<any>("/api/profile"),
+  updateProfile: (data: any) => apiFetch<any>("/api/profile", { method: "PATCH", body: JSON.stringify(data) }),
+
+  // Assistants
   listAssistants: () => apiFetch<any[]>("/api/assistants"),
   getAssistant: (id: number) => apiFetch<any>(`/api/assistants/${id}`),
   createAssistant: (data: any) =>
@@ -32,34 +37,54 @@ export const api = {
   updateAssistant: (id: number, data: any) =>
     apiFetch<any>(`/api/assistants/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
+  // Assistant Knowledge
+  listAssistantKnowledge: (assistantId: number) =>
+    apiFetch<any[]>(`/api/assistants/${assistantId}/knowledge`),
+  createAssistantKnowledge: (assistantId: number, data: any) =>
+    apiFetch<any>(`/api/assistants/${assistantId}/knowledge`, { method: "POST", body: JSON.stringify(data) }),
+  deleteKnowledge: (id: number) =>
+    apiFetch<void>(`/api/knowledge/${id}`, { method: "DELETE" }),
+
+  // Conversations
   listConversations: (assistantId?: number) =>
     apiFetch<any[]>(assistantId ? `/api/conversations?assistantId=${assistantId}` : "/api/conversations"),
-  getConversation: (id: number) =>
-    apiFetch<any>(`/api/conversations/${id}`),
+  getConversation: (id: number) => apiFetch<any>(`/api/conversations/${id}`),
   createConversation: (data: any) =>
     apiFetch<any>("/api/conversations", { method: "POST", body: JSON.stringify(data) }),
-
   listMessages: (conversationId: number) =>
     apiFetch<any[]>(`/api/conversations/${conversationId}/messages`),
 
-  listLeads: (assistantId: number) =>
-    apiFetch<any[]>(`/api/leads?assistantId=${assistantId}`),
-  createLead: (data: any) =>
-    apiFetch<any>("/api/leads", { method: "POST", body: JSON.stringify(data) }),
+  // Leads
+  listLeads: (assistantId?: number) =>
+    apiFetch<any[]>(assistantId ? `/api/leads?assistantId=${assistantId}` : "/api/leads"),
+  createLead: (data: any) => apiFetch<any>("/api/leads", { method: "POST", body: JSON.stringify(data) }),
 
-  listAppointments: (assistantId: number) =>
-    apiFetch<any[]>(`/api/appointments?assistantId=${assistantId}`),
+  // Appointments
+  listAppointments: (assistantId?: number) =>
+    apiFetch<any[]>(assistantId ? `/api/appointments?assistantId=${assistantId}` : "/api/appointments"),
 
+  // Subscriptions
   getSubscription: () => apiFetch<any>("/api/subscriptions"),
 
+  // Knowledge
   listKnowledge: () => apiFetch<any[]>("/api/knowledge"),
   createKnowledge: (data: any) =>
     apiFetch<any>("/api/knowledge", { method: "POST", body: JSON.stringify(data) }),
 
-  listMarketplaceTemplates: () =>
-    apiFetch<any[]>("/api/marketplace"),
+  // Marketplace
+  listMarketplaceTemplates: () => apiFetch<any[]>("/api/marketplace"),
   installMarketplaceTemplate: (templateId: number) =>
     apiFetch<any>("/api/marketplace/install", { method: "POST", body: JSON.stringify({ templateId }) }),
+  publishMarketplaceTemplate: (data: any) =>
+    apiFetch<any>("/api/marketplace/publish", { method: "POST", body: JSON.stringify(data) }),
+
+  // Referral Clicks
+  listReferralClicks: () => apiFetch<any[]>("/api/referral_clicks"),
+  createReferralClick: (data: any) =>
+    apiFetch<any>("/api/referral_clicks", { method: "POST", body: JSON.stringify(data) }),
+
+  // Reports
+  getWeeklyReport: () => apiFetch<any>("/api/reports/weekly"),
 
   getHealth: () => apiFetch<{ status: string }>("/api/healthz"),
 };

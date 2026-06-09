@@ -19,6 +19,7 @@ import Marketplace from "./pages/marketplace";
 import Reports from "./pages/reports";
 import Onboarding from "./pages/onboarding";
 import ChatDetail from "./pages/chat";
+import WidgetPage from "./pages/widget";
 import WhatsApp from "./pages/whatsapp";
 import Subscription from "./pages/subscription";
 import Settings from "./pages/settings";
@@ -229,7 +230,12 @@ function HomeRedirect() {
 
   useEffect(() => {
     if (!isLoading && user) {
-      setLocation("/dashboard");
+      const onboardingDone = (user as any)?.user_metadata?.onboarding_completed;
+      if (!onboardingDone) {
+        setLocation("/onboarding");
+      } else {
+        setLocation("/dashboard");
+      }
     }
   }, [isLoading, user, setLocation]);
 
@@ -285,6 +291,7 @@ function AppRoutes() {
       <Route path="/reports" component={() => <ProtectedRoute component={Reports} />} />
       <Route path="/onboarding" component={() => <ProtectedRoute component={Onboarding} />} />
       <Route path="/chat/:id" component={() => <ProtectedRoute component={ChatDetail} />} />
+      <Route path="/widget/:id" component={WidgetPage} />
       <Route path="/whatsapp" component={() => <ProtectedRoute component={WhatsApp} />} />
       <Route path="/subscription" component={() => <ProtectedRoute component={Subscription} />} />
       <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />
