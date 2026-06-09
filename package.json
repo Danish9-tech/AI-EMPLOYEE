@@ -75,6 +75,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.8"
+    "@supabase/supabase-js": "^2.49.8",
+    "@vercel/node": "^5.8.12"
   }
 }
