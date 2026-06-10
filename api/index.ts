@@ -390,6 +390,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
         const content = Array.from(lines).join('\n').slice(0, 50000);
 
+        if (content.length < 100) {
+          const metaDesc = $('meta[name="description"]').attr('content') || '';
+          const ogDesc = $('meta[property="og:description"]').attr('content') || '';
+          const ogTitle = $('meta[property="og:title"]').attr('content') || '';
+          const keywords = $('meta[name="keywords"]').attr('content') || '';
+          const fallback = [ogTitle, metaDesc, ogDesc, keywords].filter(Boolean).join('\n');
+
+          if (fallback.length < 50) {
+            return res.status(422).json({
+              error: 'This website uses JavaScript rendering and cannot be crawled automatically. Please copy and paste the text content manually using the Paste Text tab.',
+            });
+          }
+
+          const { data, error } = await supabase.from('knowledge').insert({
+            user_id: userId,
+            assistant_id: assistantId ? parseInt(assistantId) : null,
+            title: pageTitle,
+            content: fallback,
+            type: 'crawl',
+          }).select().single();
+
+          if (error) return res.status(500).json({ error: error.message });
+          return res.json({ ...data, charCount: fallback.length });
+        }
+
         const { data, error } = await supabase.from('knowledge').insert({
           user_id: userId,
           assistant_id: assistantId ? parseInt(assistantId) : null,
