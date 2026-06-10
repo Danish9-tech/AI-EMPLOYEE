@@ -382,13 +382,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const $ = cheerio.load(html);
         const pageTitle = $('title').text().trim() || url;
 
-        const paragraphs: string[] = [];
-        $('p, h1, h2, h3, h4, h5, h6').each((_, el) => {
-          const text = $(el).text().trim();
-          if (text) paragraphs.push(text);
+        $('script, style, nav, footer, header, noscript').remove();
+        const lines = new Set<string>();
+        $('p, h1, h2, h3, h4, h5, h6, li, td, th, article, section, span, div').each((_, el) => {
+          const text = $(el).text().trim().replace(/\s+/g, ' ');
+          if (text.length > 3) lines.add(text);
         });
-
-        const content = paragraphs.join('\n');
+        const content = Array.from(lines).join('\n').slice(0, 50000);
 
         const { data, error } = await supabase.from('knowledge').insert({
           user_id: userId,
