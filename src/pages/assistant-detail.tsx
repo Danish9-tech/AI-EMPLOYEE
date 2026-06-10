@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useLocation } from "wouter";
-import { ArrowLeft, BookOpen, MessageSquare, Users, Calendar, Settings, Activity, Plus, Trash2, Copy, Upload, ExternalLink, Store, Bot, Power, PowerOff, Loader2, FileText, Globe } from "lucide-react";
+import { ArrowLeft, BookOpen, MessageSquare, Users, Calendar, Settings, Activity, Plus, Trash2, Copy, Upload, ExternalLink, Store, Bot, Power, PowerOff, Loader2, FileText, Globe, Code2, QrCode, Download } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,9 @@ export default function AssistantDetail() {
   const [crawlCharCount, setCrawlCharCount] = useState(0);
   const [crawlSuccess, setCrawlSuccess] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [embedPlatform, setEmbedPlatform] = useState("html");
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  const [qrLoading, setQrLoading] = useState(false);
 
   const [editName, setEditName] = useState("");
   const [editBusinessName, setEditBusinessName] = useState("");
@@ -175,6 +178,86 @@ export default function AssistantDetail() {
     }
   };
 
+  const copyText = (text: string, label = "Copied") => {
+    navigator.clipboard.writeText(text);
+    toast({ title: label });
+  };
+
+  const generateQR = async () => {
+    setQrLoading(true);
+    try {
+      const QRCode = await import("qrcode");
+      const url = `https://ai-employee-rho.vercel.app/chat/${id}`;
+      const dataUrl = await QRCode.toDataURL(url, { width: 300, margin: 2, color: { dark: "#ffffff", light: "#00000000" } });
+      setQrDataUrl(dataUrl);
+    } catch {
+      toast({ title: "QR generation failed", variant: "destructive" });
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
+  const platforms: Record<string, { name: string; icon: string; code: string; instructions: string; language: string }> = {
+    html: {
+      name: "HTML",
+      icon: "🌐",
+      language: "html",
+      code: `<!-- Paste before </body> tag -->\n<script src="https://ai-employee-rho.vercel.app/widget.js" \n  data-id="${id}"></script>`,
+      instructions: "Open your HTML file, find the closing </body> tag, paste this code just before it.",
+    },
+    react: {
+      name: "React",
+      icon: "⚛️",
+      language: "jsx",
+      code: `// In your App.jsx or index.jsx, add inside useEffect:\nuseEffect(() => {\n  const script = document.createElement('script');\n  script.src = 'https://ai-employee-rho.vercel.app/widget.js';\n  script.setAttribute('data-id', '${id}');\n  document.body.appendChild(script);\n}, []);`,
+      instructions: "Paste this in your root App.jsx component.",
+    },
+    nextjs: {
+      name: "Next.js",
+      icon: "▲",
+      language: "jsx",
+      code: `// In app/layout.tsx or pages/_app.tsx\nimport Script from 'next/script'\n\n<Script \n  src="https://ai-employee-rho.vercel.app/widget.js"\n  data-id="${id}"\n  strategy="afterInteractive"\n/>`,
+      instructions: "Add this to your root layout file. Requires next/script import.",
+    },
+    wordpress: {
+      name: "WordPress",
+      icon: "🔷",
+      language: "html",
+      code: `<script src="https://ai-employee-rho.vercel.app/widget.js" \n  data-id="${id}"></script>`,
+      instructions: 'Go to Appearance → Theme Editor → footer.php. Paste this code before </body>. Alternatively, install the plugin "Insert Headers and Footers" and paste in the Footer section.',
+    },
+    shopify: {
+      name: "Shopify",
+      icon: "🛒",
+      language: "html",
+      code: `<script src="https://ai-employee-rho.vercel.app/widget.js" \n  data-id="${id}"></script>`,
+      instructions: "Go to Online Store → Themes → Edit Code → theme.liquid. Paste before </body>.",
+    },
+    webflow: {
+      name: "Webflow",
+      icon: "🌀",
+      language: "html",
+      code: `<script src="https://ai-employee-rho.vercel.app/widget.js" \n  data-id="${id}"></script>`,
+      instructions: "Go to Project Settings → Custom Code → Footer Code. Paste this.",
+    },
+    wix: {
+      name: "Wix",
+      icon: "🔶",
+      language: "html",
+      code: `<script src="https://ai-employee-rho.vercel.app/widget.js" \n  data-id="${id}"></script>`,
+      instructions: "Go to Settings → Advanced → Custom Code → Add Code → Body. Paste this.",
+    },
+    vue: {
+      name: "Vue.js",
+      icon: "💚",
+      language: "js",
+      code: `// In main.js or App.vue mounted():\nmounted() {\n  const script = document.createElement('script');\n  script.src = 'https://ai-employee-rho.vercel.app/widget.js';\n  script.setAttribute('data-id', '${id}');\n  document.body.appendChild(script);\n}`,
+      instructions: "Paste this in your main.js or App.vue mounted() hook.",
+    },
+  };
+
+  const plat = platforms[embedPlatform];
+
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-[50vh] text-center">
@@ -231,6 +314,7 @@ export default function AssistantDetail() {
           <TabsTrigger value="conversations" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg"><MessageSquare className="h-4 w-4 mr-2" />Conversations</TabsTrigger>
           <TabsTrigger value="leads" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg"><Users className="h-4 w-4 mr-2" />Leads</TabsTrigger>
           <TabsTrigger value="appointments" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg"><Calendar className="h-4 w-4 mr-2" />Appointments</TabsTrigger>
+          <TabsTrigger value="embed" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg"><Code2 className="h-4 w-4 mr-2" />Embed Code</TabsTrigger>
           <TabsTrigger value="settings" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg"><Settings className="h-4 w-4 mr-2" />Settings</TabsTrigger>
         </TabsList>
 
@@ -393,6 +477,105 @@ export default function AssistantDetail() {
           <TabsContent value="appointments" className="mt-0">
             <h2 className="text-xl font-semibold text-white mb-4">Appointments</h2>
             <p className="text-muted-foreground text-center py-8">Appointments will appear here once scheduled.</p>
+          </TabsContent>
+
+          <TabsContent value="embed" className="mt-0">
+            <h2 className="text-xl font-semibold text-white mb-4">Embed Code</h2>
+            <p className="text-muted-foreground mb-6">Choose your platform and paste the code to add this assistant to your website.</p>
+
+            <div className="flex flex-wrap gap-2 mb-6">
+              {Object.entries(platforms).map(([key, p]) => (
+                <button
+                  key={key}
+                  onClick={() => setEmbedPlatform(key)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    embedPlatform === key
+                      ? "bg-primary text-black"
+                      : "bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  <span>{p.icon}</span>
+                  {p.name}
+                </button>
+              ))}
+            </div>
+
+            <div className="bg-white/5 border border-white/10 rounded-lg p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-white">{plat.icon} {plat.name}</h3>
+                <button
+                  onClick={() => copyText(plat.code, `${plat.name} code copied`)}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary/20 text-primary rounded-lg hover:bg-primary/30 transition-colors"
+                >
+                  <Copy className="h-4 w-4" /> Copy Code
+                </button>
+              </div>
+
+              <pre className="bg-black/60 text-green-400 p-4 rounded-lg overflow-x-auto text-sm leading-relaxed font-mono whitespace-pre-wrap">{plat.code}</pre>
+
+              <div className="flex items-start gap-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                <BookOpen className="h-5 w-5 text-blue-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-white mb-1">Instructions</p>
+                  <p className="text-sm text-muted-foreground">{plat.instructions}</p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => window.open(`https://ai-employee-rho.vercel.app/chat/${id}`, "_blank")}
+                className="flex items-center gap-2 w-full justify-center py-2.5 bg-primary/20 text-primary rounded-lg hover:bg-primary/30 transition-colors text-sm font-medium"
+              >
+                <ExternalLink className="h-4 w-4" /> Test your widget
+              </button>
+            </div>
+
+            <div className="mt-8 p-6 bg-white/5 border border-white/10 rounded-lg">
+              <h3 className="text-lg font-semibold text-white mb-4">Share Direct Link</h3>
+              <div className="flex items-center gap-2 mb-4">
+                <input
+                  readOnly
+                  value={`https://ai-employee-rho.vercel.app/chat/${id}`}
+                  className="flex-1 bg-black/40 border border-white/10 text-white text-sm px-3 py-2 rounded-lg font-mono"
+                />
+                <button
+                  onClick={() => copyText(`https://ai-employee-rho.vercel.app/chat/${id}`, "Link copied")}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary/20 text-primary rounded-lg hover:bg-primary/30 transition-colors text-sm font-medium shrink-0"
+                >
+                  <Copy className="h-4 w-4" /> Copy Link
+                </button>
+                <button
+                  onClick={() => window.open(`https://ai-employee-rho.vercel.app/chat/${id}`, "_blank")}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary/20 text-primary rounded-lg hover:bg-primary/30 transition-colors text-sm font-medium shrink-0"
+                >
+                  <ExternalLink className="h-4 w-4" /> Open
+                </button>
+              </div>
+
+              <div className="border-t border-white/10 pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-medium text-white">QR Code</p>
+                  <button
+                    onClick={generateQR}
+                    disabled={qrLoading}
+                    className="flex items-center gap-2 px-4 py-2 bg-primary/20 text-primary rounded-lg hover:bg-primary/30 transition-colors text-sm font-medium disabled:opacity-50"
+                  >
+                    <QrCode className="h-4 w-4" /> {qrLoading ? "Generating..." : qrDataUrl ? "Regenerate" : "Generate QR"}
+                  </button>
+                </div>
+                {qrDataUrl && (
+                  <div className="flex flex-col items-center gap-3">
+                    <img src={qrDataUrl} alt="QR Code" className="w-40 h-40 rounded-lg" />
+                    <a
+                      href={qrDataUrl}
+                      download={`qr-${id}.png`}
+                      className="flex items-center gap-2 text-sm text-primary hover:underline"
+                    >
+                      <Download className="h-4 w-4" /> Download PNG
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
           </TabsContent>
 
           <TabsContent value="settings" className="mt-0">
