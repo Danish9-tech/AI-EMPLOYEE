@@ -48,11 +48,15 @@ export const api = {
   // Conversations
   listConversations: (assistantId?: string | number) =>
     apiFetch<any[]>(assistantId ? `/api/conversations?assistantId=${assistantId}` : "/api/conversations"),
-  getConversation: (id: number) => apiFetch<any>(`/api/conversations/${id}`),
+  getConversation: (id: string | number) => apiFetch<any>(`/api/conversations/${id}`),
   createConversation: (data: any) =>
     apiFetch<any>("/api/conversations", { method: "POST", body: JSON.stringify(data) }),
-  listMessages: (conversationId: number) =>
+  listMessages: (conversationId: string | number) =>
     apiFetch<any[]>(`/api/conversations/${conversationId}/messages`),
+  setConversationMode: (id: string | number, mode: 'ai' | 'human') =>
+    apiFetch<any>(`/api/conversations/${id}/mode`, { method: "PATCH", body: JSON.stringify({ mode }) }),
+  sendOwnerReply: (id: string | number, message: string) =>
+    apiFetch<any>(`/api/conversations/${id}/reply`, { method: "POST", body: JSON.stringify({ message }) }),
 
   // Leads
   listLeads: (assistantId?: string | number) =>

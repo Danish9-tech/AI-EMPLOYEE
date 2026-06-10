@@ -454,7 +454,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json(data);
     }
 
-    const conversationMatch = path.match(/^\/api\/conversations\/(\d+)$/);
+    const conversationMatch = path.match(/^\/api\/conversations\/([a-f0-9-]+)$/);
     if (conversationMatch) {
       if (req.method === 'GET') {
         const userId = await requireUserId(req, res);
@@ -465,7 +465,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    const messagesMatch = path.match(/^\/api\/conversations\/(\d+)\/messages$/);
+    const messagesMatch = path.match(/^\/api\/conversations\/([a-f0-9-]+)\/messages$/);
     if (messagesMatch && req.method === 'GET') {
       const userId = await requireUserId(req, res);
       if (!userId) return;
@@ -474,6 +474,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { data, error } = await supabase.from('messages').select('*').eq('conversation_id', messagesMatch[1]).order('created_at', { ascending: true });
       if (error) return res.status(500).json({ error: error.message });
       return res.json(data);
+    }
+
+    const modeMatch = path.match(/^\/api\/conversations\/([a-f0-9-]+)\/mode$/);
+    if (modeMatch && req.method === 'PATCH') {
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
+      const { mode } = req.body || {};
+      if (!mode || !['ai', 'human'].includes(mode)) return res.status(400).json({ error: 'mode must be "ai" or "human"' });
+      const { data: conversation } = await supabase.from('conversations').select('id, user_id').eq('id', modeMatch[1]).eq('user_id', userId).single();
+      if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+      const { data, error } = await supabase.from('conversations').update({ mode, updated_at: new Date().toISOString() }).eq('id', modeMatch[1]).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data);
+    }
+
+    const replyMatch = path.match(/^\/api\/conversations\/([a-f0-9-]+)\/reply$/);
+    if (replyMatch && req.method === 'POST') {
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
+      const { message } = req.body || {};
+      if (!message) return res.status(400).json({ error: 'message required' });
+      const { data: conversation } = await supabase.from('conversations').select('id, user_id').eq('id', replyMatch[1]).eq('user_id', userId).single();
+      if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+      const { data: msg, error: insertError } = await supabase.from('messages').insert({
+        conversation_id: replyMatch[1],
+        role: 'owner',
+        content: message,
+      }).select().single();
+      if (insertError) return res.status(500).json({ error: insertError.message });
+      await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', replyMatch[1]);
+      return res.json(msg);
     }
 
     // ---- LEADS ----
@@ -816,6 +847,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { data: assistant } = await supabase.from('assistants').select('*').eq('id', assistantId).single();
       if (!assistant) return res.status(404).json({ error: 'Assistant not found' });
 
+      let conversationId: string | null = null;
+      const { data: existingConv } = await supabase.from('conversations').select('id, mode').eq('assistant_id', assistantId).eq('status', 'active').maybeSingle();
+      if (existingConv) {
+        conversationId = existingConv.id;
+        await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
+        if (existingConv.mode === 'human') {
+          await supabase.from('messages').insert({ conversation_id: conversationId, role: 'user', content: message });
+          return res.json({ reply: null, humanMode: true });
+        }
+      } else {
+        const { data: newConv } = await supabase.from('conversations').insert({ assistant_id: assistantId, user_id: assistant.user_id, status: 'active' }).select().single();
+        conversationId = newConv?.id || null;
+      }
+
       let reply = "";
       try {
         const groqKey = process.env.GROQ_API_KEY || '';
@@ -836,16 +881,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           reply = groqData.choices?.[0]?.message?.content || "I'm not sure how to respond to that.";
         } else {
           reply = `This is a simulated response from ${assistant.name}. Connect a Groq API key to enable AI responses.`;
-        }
-
-        let conversationId: number | null = null;
-        const { data: existingConv } = await supabase.from('conversations').select('id').eq('assistant_id', assistantId).eq('status', 'active').maybeSingle();
-        if (existingConv) {
-          conversationId = existingConv.id;
-          await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
-        } else {
-          const { data: newConv } = await supabase.from('conversations').insert({ assistant_id: assistantId, user_id: assistant.user_id, status: 'active' }).select().single();
-          conversationId = newConv?.id || null;
         }
 
         if (conversationId) {
