@@ -222,6 +222,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    // ---- ROI CALCULATOR ----
+    if (path === '/api/roi' && req.method === 'GET') {
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
+      const [convRes, leadsRes, profileRes, assistRes] = await Promise.all([
+        supabase.from('conversations').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+        supabase.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+        supabase.from('profiles').select('avg_sale_value').eq('user_id', userId).maybeSingle(),
+        supabase.from('assistants').select('created_at').eq('user_id', userId).order('created_at', { ascending: true }).limit(1).maybeSingle(),
+      ]);
+      const totalConversations = convRes.count || 0;
+      const totalLeads = leadsRes.count || 0;
+      const avgSaleValue = Number((profileRes.data as any)?.avg_sale_value) || 100;
+      const hoursSaved = Math.round(totalConversations * 0.25 * 10) / 10;
+      const moneySaved = Math.round(hoursSaved * 15);
+      const revenueGenerated = Math.round(totalLeads * avgSaleValue * 0.1);
+      const earliestDate = (assistRes.data as any)?.created_at;
+      const daysActive = earliestDate ? Math.max(1, Math.floor((Date.now() - new Date(earliestDate).getTime()) / 86400000)) : 1;
+      return res.json({ hoursSaved, moneySaved, revenueGenerated, daysActive, totalConversations, totalLeads });
+    }
+
     // ---- PROFILE ----
     if (path === '/api/profile' && req.method === 'GET') {
       const userId = await requireUserId(req, res);

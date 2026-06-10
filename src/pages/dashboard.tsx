@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Bot, MessageSquare, Users, TrendingUp, Activity, DollarSign, BarChart3, ShoppingCart, ArrowRight, Copy, ExternalLink, BookOpen } from "lucide-react";
+import { Bot, MessageSquare, Users, TrendingUp, Activity, DollarSign, BarChart3, ShoppingCart, ArrowRight, Copy, ExternalLink, BookOpen, Trophy, Clock, Target } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
@@ -24,6 +24,11 @@ export default function Dashboard() {
   const { data: weeklyReport } = useQuery({
     queryKey: ["weeklyReport"],
     queryFn: () => api.getWeeklyReport(),
+  });
+
+  const { data: roi } = useQuery({
+    queryKey: ["roi"],
+    queryFn: () => api.getRoi(),
   });
 
   const funnelData = useMemo(() => [
@@ -97,6 +102,56 @@ export default function Dashboard() {
                 <span>{stats?.totalConversations || 0} total conversations</span>
                 <span>|</span>
                 <span>{stats?.totalLeads || 0} leads captured</span>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="bg-white/5 border-amber-500/30 overflow-hidden relative group">
+        <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-yellow-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-white flex items-center gap-2">
+            <Trophy className="h-5 w-5 text-amber-400" />
+            Your AI Employee ROI
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <Skeleton className="h-24 bg-white/10" />
+          ) : (
+            <div className="space-y-6">
+              <div className="grid gap-6 sm:grid-cols-3">
+                <div className="p-4 bg-cyan-500/10 rounded-xl border border-cyan-500/20">
+                  <Clock className="h-5 w-5 text-cyan-400 mb-2" />
+                  <p className="text-3xl font-bold text-cyan-400">{roi?.hoursSaved || 0}</p>
+                  <p className="text-sm text-muted-foreground">hours saved</p>
+                </div>
+                <div className="p-4 bg-green-500/10 rounded-xl border border-green-500/20">
+                  <DollarSign className="h-5 w-5 text-green-400 mb-2" />
+                  <p className="text-3xl font-bold text-green-400">${(roi?.moneySaved || 0).toLocaleString()}</p>
+                  <p className="text-sm text-muted-foreground">saved on staff costs</p>
+                </div>
+                <div className="p-4 bg-amber-500/10 rounded-xl border border-amber-500/20">
+                  <Target className="h-5 w-5 text-amber-400 mb-2" />
+                  <p className="text-3xl font-bold text-amber-400">${(roi?.revenueGenerated || 0).toLocaleString()}</p>
+                  <p className="text-sm text-muted-foreground">revenue generated</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <p className="text-muted-foreground">Since you joined <strong className="text-white">{roi?.daysActive || 0}</strong> days ago</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10 text-xs"
+                  onClick={() => {
+                    const msg = `My AI Employee saved me $${(roi?.moneySaved || 0).toLocaleString()} and ${roi?.hoursSaved || 0} hours!`;
+                    navigator.clipboard.writeText(msg);
+                    toast({ title: "ROI stats copied to clipboard!" });
+                  }}
+                >
+                  <Copy className="h-3 w-3 mr-1" /> Share
+                </Button>
               </div>
             </div>
           )}

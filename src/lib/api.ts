@@ -100,6 +100,9 @@ export const api = {
   scheduleFollowUps: (data: { leadId: string | number; assistantId: string | number; leadName?: string; leadEmail?: string }) =>
     apiFetch<any[]>("/api/follow-ups/schedule", { method: "POST", body: JSON.stringify(data) }),
 
+  // ROI
+  getRoi: () => apiFetch<any>("/api/roi"),
+
   // Reports
   getWeeklyReport: () => apiFetch<any>("/api/reports/weekly"),
 
