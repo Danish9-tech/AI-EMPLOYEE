@@ -70,6 +70,10 @@ export const api = {
   listKnowledge: () => apiFetch<any[]>("/api/knowledge"),
   createKnowledge: (data: any) =>
     apiFetch<any>("/api/knowledge", { method: "POST", body: JSON.stringify(data) }),
+  uploadKnowledge: (data: { assistantId: number; fileName: string; fileData: string; fileType: string }) =>
+    apiFetch<any>("/api/knowledge/upload", { method: "POST", body: JSON.stringify(data) }),
+  crawlKnowledge: (data: { assistantId: number; url: string }) =>
+    apiFetch<any>("/api/knowledge/crawl", { method: "POST", body: JSON.stringify(data) }),
 
   // Marketplace
   listMarketplaceTemplates: () => apiFetch<any[]>("/api/marketplace"),

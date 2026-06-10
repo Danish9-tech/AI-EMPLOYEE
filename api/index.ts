@@ -3,6 +3,9 @@ import { createClient } from '@supabase/supabase-js';
 import { createServer } from 'http';
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
+import pdfParse from 'pdf-parse';
+import mammoth from 'mammoth';
+import * as cheerio from 'cheerio';
 
 const envFile = resolve(process.cwd(), '.env');
 if (existsSync(envFile)) {
@@ -321,6 +324,89 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { error } = await supabase.from('knowledge').delete().eq('id', knowledgeItemMatch[1]).eq('user_id', userId);
       if (error) return res.status(500).json({ error: error.message });
       return res.status(204).end();
+    }
+
+    // ---- KNOWLEDGE UPLOAD ----
+    if (path === '/api/knowledge/upload' && req.method === 'POST') {
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
+      const { assistantId, fileName, fileData, fileType } = req.body || {};
+      if (!fileData || !fileName) return res.status(400).json({ error: 'fileData and fileName required' });
+
+      const buffer = Buffer.from(fileData, 'base64');
+      let text = '';
+
+      try {
+        if (fileType === 'application/pdf' || fileName.endsWith('.pdf')) {
+          const data = await pdfParse(buffer);
+          text = data.text;
+        } else if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || fileName.endsWith('.docx')) {
+          const result = await mammoth.extractRawText({ buffer });
+          text = result.value;
+        } else {
+          text = buffer.toString('utf-8');
+        }
+      } catch {
+        return res.status(422).json({ error: 'Failed to parse file' });
+      }
+
+      const title = fileName.replace(/\.(txt|pdf|docx)$/i, '');
+      const { data, error } = await supabase.from('knowledge').insert({
+        user_id: userId,
+        assistant_id: assistantId ? parseInt(assistantId) : null,
+        title,
+        content: text || '(empty file)',
+        type: 'file',
+      }).select().single();
+
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data);
+    }
+
+    // ---- KNOWLEDGE CRAWL ----
+    if (path === '/api/knowledge/crawl' && req.method === 'POST') {
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
+      const { assistantId, url } = req.body || {};
+      if (!url) return res.status(400).json({ error: 'url required' });
+
+      try {
+        const response = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AI-Employee/1.0)' },
+          signal: AbortSignal.timeout(15000),
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const html = await response.text();
+        const $ = cheerio.load(html);
+        const pageTitle = $('title').text().trim() || url;
+
+        const paragraphs: string[] = [];
+        $('p, h1, h2, h3, h4, h5, h6').each((_, el) => {
+          const text = $(el).text().trim();
+          if (text) paragraphs.push(text);
+        });
+
+        const content = paragraphs.join('\n');
+
+        const { data, error } = await supabase.from('knowledge').insert({
+          user_id: userId,
+          assistant_id: assistantId ? parseInt(assistantId) : null,
+          title: pageTitle,
+          content: content || '(empty page)',
+          type: 'crawl',
+          source_url: url,
+        }).select().single();
+
+        if (error) return res.status(500).json({ error: error.message });
+        return res.json({ ...data, charCount: content.length });
+      } catch (e: any) {
+        if (e.message?.includes('fetch') || e.name === 'AbortError' || e.message?.includes('HTTP')) {
+          return res.status(422).json({ error: 'This site blocked crawling. Try copying the text manually.' });
+        }
+        return res.status(500).json({ error: e.message || 'Crawl failed' });
+      }
     }
 
     // ---- CONVERSATIONS ----

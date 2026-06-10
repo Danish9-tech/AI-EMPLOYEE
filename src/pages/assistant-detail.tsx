@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useLocation } from "wouter";
-import { ArrowLeft, BookOpen, MessageSquare, Users, Calendar, Settings, Activity, Plus, Trash2, Copy, Upload, ExternalLink, Store, Bot, Power, PowerOff, Loader2 } from "lucide-react";
+import { ArrowLeft, BookOpen, MessageSquare, Users, Calendar, Settings, Activity, Plus, Trash2, Copy, Upload, ExternalLink, Store, Bot, Power, PowerOff, Loader2, FileText, Globe } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,13 @@ export default function AssistantDetail() {
   const [pubIndustry, setPubIndustry] = useState("");
   const [showDelete, setShowDelete] = useState(false);
   const [uploading, setUploading] = useState(false);
+
+  const [crawlUrl, setCrawlUrl] = useState("");
+  const [crawlLoading, setCrawlLoading] = useState(false);
+  const [crawlError, setCrawlError] = useState("");
+  const [crawlCharCount, setCrawlCharCount] = useState(0);
+  const [crawlSuccess, setCrawlSuccess] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
   const [editName, setEditName] = useState("");
   const [editBusinessName, setEditBusinessName] = useState("");
@@ -114,33 +121,16 @@ export default function AssistantDetail() {
     toast({ title: "Embed code copied" });
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const uploadFileToServer = async (file: File) => {
     setUploading(true);
     try {
-      let text = "";
-      if (file.name.endsWith(".txt")) {
-        text = await file.text();
-      } else if (file.name.endsWith(".pdf")) {
-        const arrayBuffer = await file.arrayBuffer();
-        const bytes = new Uint8Array(arrayBuffer);
-        text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-        text = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "").slice(0, 50000);
-      } else if (file.name.endsWith(".docx")) {
-        const arrayBuffer = await file.arrayBuffer();
-        const bytes = new Uint8Array(arrayBuffer);
-        text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-        const match = text.match(/<w:t[^>]*>([^<]+)<\/w:t>/g);
-        if (match) {
-          text = match.map((m: string) => m.replace(/<\/?w:t[^>]*>/g, "")).join(" ");
-        } else {
-          text = text.replace(/[^\x20-\x7E\n]/g, " ").replace(/\s+/g, " ").trim();
-        }
-        text = text.slice(0, 50000);
-      }
-      const title = file.name.replace(/\.[^.]+$/, "");
-      await api.createAssistantKnowledge(id, { title, content: text || "(empty file)", type: "manual" });
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve((reader.result as string).split(",")[1]);
+        reader.onerror = () => reject();
+        reader.readAsDataURL(file);
+      });
+      await api.uploadKnowledge({ assistantId: id, fileName: file.name, fileData: base64, fileType: file.type });
       queryClient.invalidateQueries({ queryKey: ["assistantKnowledge", id] });
       toast({ title: "File uploaded", description: `${file.name} imported successfully.` });
     } catch {
@@ -148,6 +138,40 @@ export default function AssistantDetail() {
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await uploadFileToServer(file);
+  };
+
+  const handleFileDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    await uploadFileToServer(file);
+  };
+
+  const handleCrawl = async () => {
+    if (!crawlUrl) return;
+    setCrawlLoading(true);
+    setCrawlError("");
+    setCrawlSuccess(false);
+    setCrawlCharCount(0);
+    try {
+      const result = await api.crawlKnowledge({ assistantId: id, url: crawlUrl });
+      queryClient.invalidateQueries({ queryKey: ["assistantKnowledge", id] });
+      setCrawlCharCount(result.charCount || result.content?.length || 0);
+      setCrawlSuccess(true);
+      toast({ title: "Website crawled", description: `Content from ${crawlUrl} saved.` });
+      setCrawlUrl("");
+    } catch (e: any) {
+      setCrawlError(e.message || "This site blocked crawling. Try copying the text manually.");
+    } finally {
+      setCrawlLoading(false);
     }
   };
 
@@ -229,32 +253,81 @@ export default function AssistantDetail() {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold text-white">Knowledge Base</h2>
             </div>
-            <div className="space-y-4 mb-8">
-              <div className="grid gap-3">
-                <Label className="text-white/80">Title</Label>
-                <Input value={knowledgeTitle} onChange={(e) => setKnowledgeTitle(e.target.value)} placeholder="e.g. Pricing Information" className="bg-black/40 border-white/10 text-white" />
-              </div>
-              <div className="grid gap-3">
-                <Label className="text-white/80">Content</Label>
-                <Textarea value={knowledgeContent} onChange={(e) => setKnowledgeContent(e.target.value)} placeholder="What should your assistant know?" rows={4} className="bg-black/40 border-white/10 text-white" />
-              </div>
-              <div className="flex gap-3">
-                <Button onClick={() => addKnowledge.mutate()} disabled={!knowledgeTitle || !knowledgeContent || addKnowledge.isPending} className="bg-primary text-black hover:bg-primary/90">
-                  <Plus className="mr-2 h-4 w-4" /> Add Knowledge
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".txt,.pdf,.docx"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-                <Button variant="outline" className="border-primary/30 text-white hover:bg-primary/10" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
-                  {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                  {uploading ? "Uploading..." : "Import File"}
-                </Button>
-              </div>
-            </div>
+
+            <Tabs defaultValue="paste" className="mb-8">
+              <TabsList className="bg-black/50 border border-white/10 p-1 w-full justify-start overflow-x-auto h-auto rounded-xl mb-6">
+                <TabsTrigger value="paste" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg">
+                  <FileText className="h-4 w-4 mr-2" />Paste Text
+                </TabsTrigger>
+                <TabsTrigger value="upload" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg">
+                  <Upload className="h-4 w-4 mr-2" />Upload File
+                </TabsTrigger>
+                <TabsTrigger value="crawl" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg">
+                  <Globe className="h-4 w-4 mr-2" />Crawl URL
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="paste">
+                <div className="space-y-4">
+                  <div className="grid gap-3">
+                    <Label className="text-white/80">Title</Label>
+                    <Input value={knowledgeTitle} onChange={(e) => setKnowledgeTitle(e.target.value)} placeholder="e.g. Pricing Information" className="bg-black/40 border-white/10 text-white" />
+                  </div>
+                  <div className="grid gap-3">
+                    <Label className="text-white/80">Content</Label>
+                    <Textarea value={knowledgeContent} onChange={(e) => setKnowledgeContent(e.target.value)} placeholder="What should your assistant know?" rows={6} className="bg-black/40 border-white/10 text-white" />
+                  </div>
+                  <Button onClick={() => addKnowledge.mutate()} disabled={!knowledgeTitle || !knowledgeContent || addKnowledge.isPending} className="bg-primary text-black hover:bg-primary/90">
+                    <Plus className="mr-2 h-4 w-4" /> Save
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="upload">
+                <div
+                  className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors ${dragOver ? "border-primary border-solid bg-primary/5" : "border-white/20 hover:border-primary/50"}`}
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={handleFileDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <input ref={fileInputRef} type="file" accept=".txt,.pdf,.docx" onChange={handleFileUpload} className="hidden" />
+                  {uploading ? (
+                    <Loader2 className="h-8 w-8 text-muted-foreground mx-auto mb-4 animate-spin" />
+                  ) : (
+                    <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-4" />
+                  )}
+                  <p className="text-white mb-2">{uploading ? "Uploading..." : "Drop a file here, or click to browse"}</p>
+                  <p className="text-sm text-muted-foreground">Supports .txt, .pdf, .docx</p>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="crawl">
+                <div className="space-y-4">
+                  <div className="grid gap-3">
+                    <Label className="text-white/80">Website URL</Label>
+                    <div className="flex gap-2">
+                      <Input value={crawlUrl} onChange={(e) => setCrawlUrl(e.target.value)} placeholder="https://example.com" className="bg-black/40 border-white/10 text-white flex-1" />
+                      <Button onClick={handleCrawl} disabled={!crawlUrl || crawlLoading} className="bg-primary text-black hover:bg-primary/90 shrink-0">
+                        {crawlLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe className="h-4 w-4 mr-2" />}
+                        {crawlLoading ? "Crawling..." : "Crawl Website"}
+                      </Button>
+                    </div>
+                  </div>
+                  {crawlError && (
+                    <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                      <span className="text-red-400 text-sm">{crawlError}</span>
+                    </div>
+                  )}
+                  {crawlSuccess && (
+                    <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+                      <span className="text-green-400 text-sm">Extracted {crawlCharCount.toLocaleString()} characters</span>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
+
             {loadingKnow ? (
               <Skeleton className="h-32 bg-white/10" />
             ) : knowledge?.length === 0 ? (
@@ -264,7 +337,11 @@ export default function AssistantDetail() {
                 {knowledge?.map((item: any) => (
                   <div key={item.id} className="flex items-start justify-between p-4 bg-black/40 rounded-lg border border-white/5">
                     <div className="flex-1 min-w-0">
-                      <p className="text-white font-medium">{item.title}</p>
+                      <p className="text-white font-medium flex items-center gap-2">
+                        {item.type === "crawl" && <Globe className="h-3 w-3 text-muted-foreground" />}
+                        {item.type === "file" && <FileText className="h-3 w-3 text-muted-foreground" />}
+                        {item.title}
+                      </p>
                       <p className="text-sm text-muted-foreground line-clamp-2">{item.content}</p>
                     </div>
                     <Button variant="ghost" size="icon" className="text-red-400 hover:text-red-300 shrink-0 ml-4" onClick={() => deleteKnowledge.mutate(item.id)}>

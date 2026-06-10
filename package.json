@@ -77,6 +77,9 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.8",
-    "@vercel/node": "^5.8.12"
+    "@vercel/node": "^5.8.12",
+    "cheerio": "^1.0.0",
+    "pdf-parse": "^1.1.1",
+    "mammoth": "^1.9.0"
   }
 }
