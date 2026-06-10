@@ -95,6 +95,11 @@ export const api = {
   createReferralClick: (data: any) =>
     apiFetch<any>("/api/referral_clicks", { method: "POST", body: JSON.stringify(data) }),
 
+  // Follow-ups
+  listFollowUps: () => apiFetch<any[]>("/api/follow-ups"),
+  scheduleFollowUps: (data: { leadId: string | number; assistantId: string | number; leadName?: string; leadEmail?: string }) =>
+    apiFetch<any[]>("/api/follow-ups/schedule", { method: "POST", body: JSON.stringify(data) }),
+
   // Reports
   getWeeklyReport: () => apiFetch<any>("/api/reports/weekly"),
 

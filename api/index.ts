@@ -698,6 +698,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json(data);
     }
 
+    // ---- FOLLOW-UPS ----
+    if (path === '/api/follow-ups' && req.method === 'GET') {
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
+      const { data, error } = await supabase.from('follow_ups').select('*').eq('user_id', userId).order('scheduled_at', { ascending: true });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data);
+    }
+
+    if (path === '/api/follow-ups/schedule' && req.method === 'POST') {
+      const userId = await requireUserId(req, res);
+      if (!userId) return;
+      const { leadId, assistantId, leadName, leadEmail } = req.body || {};
+      if (!leadId || !assistantId) return res.status(400).json({ error: 'leadId and assistantId required' });
+      const now = new Date();
+      const messages = [
+        { message: `Hi ${leadName || 'there'}, just checking if you had any questions about our services!`, hours: 1 },
+        { message: `Hi ${leadName || 'there'}! We would love to help you get started. Do you have any questions?`, hours: 24 },
+        { message: `Last chance to connect, ${leadName || 'friend'} — we are here to help if you need anything!`, hours: 72 },
+      ];
+      const inserts = messages.map(m => ({
+        user_id: userId,
+        lead_id: leadId,
+        assistant_id: assistantId,
+        message: m.message,
+        scheduled_at: new Date(now.getTime() + m.hours * 3600000).toISOString(),
+      }));
+      const { data, error } = await supabase.from('follow_ups').insert(inserts).select();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data);
+    }
+
     // ---- REPORTS / WEEKLY ----
     if (path === '/api/reports/weekly' && req.method === 'GET') {
       const userId = await requireUserId(req, res);
