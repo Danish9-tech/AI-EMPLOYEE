@@ -93,7 +93,7 @@ export default function WidgetPage() {
     fetch("/api/referral_clicks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ assistantId: Number(assistantId), referrer: "widget", pageUrl: window.location.href }),
+      body: JSON.stringify({ assistantId, referrer: "widget", pageUrl: window.location.href }),
     }).catch(() => {});
   };
 
@@ -115,7 +115,7 @@ export default function WidgetPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assistantId: Number(assistantId), message: msg }),
+        body: JSON.stringify({ assistantId, message: msg }),
       });
       if (res.ok) {
         const data = await res.json();

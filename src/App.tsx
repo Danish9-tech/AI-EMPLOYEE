@@ -295,7 +295,11 @@ function AppRoutes() {
       <Route path="/marketplace" component={() => <ProtectedRoute component={Marketplace} />} />
       <Route path="/reports" component={() => <ProtectedRoute component={Reports} />} />
       <Route path="/onboarding" component={() => <ProtectedRoute component={Onboarding} />} />
-      <Route path="/chat/:id" component={() => <ProtectedRoute component={ChatDetail} />} />
+      <Route path="/chat/:id" component={() => (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="text-primary animate-pulse text-lg">Loading...</div></div>}>
+          <ChatDetail />
+        </Suspense>
+      )} />
       <Route path="/widget/:id" component={() => (
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="text-primary animate-pulse text-lg">Loading...</div></div>}>
           <WidgetPage />

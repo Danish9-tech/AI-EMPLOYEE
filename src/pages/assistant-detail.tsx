@@ -16,7 +16,7 @@ import { api, apiFetch } from "@/lib/api";
 
 export default function AssistantDetail() {
   const params = useParams();
-  const id = Number(params.id);
+  const id = params?.id || "";
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -120,7 +120,7 @@ export default function AssistantDetail() {
   });
 
   const copyEmbed = () => {
-    navigator.clipboard.writeText(`<script src="https://${window.location.hostname}/widget.js" data-id="${id}"></script>`);
+    navigator.clipboard.writeText(`<script src="https://${window.location.hostname}/widget.js" data-id="${embedId}"></script>`);
     toast({ title: "Embed code copied" });
   };
 
@@ -183,11 +183,13 @@ export default function AssistantDetail() {
     toast({ title: label });
   };
 
+  const embedId = assistant?.id || id;
+
   const generateQR = async () => {
     setQrLoading(true);
     try {
       const QRCode = await import("qrcode");
-      const url = `https://ai-employee-rho.vercel.app/chat/${id}`;
+      const url = `https://ai-employee-rho.vercel.app/chat/${embedId}`;
       const dataUrl = await QRCode.toDataURL(url, { width: 300, margin: 2, color: { dark: "#ffffff", light: "#00000000" } });
       setQrDataUrl(dataUrl);
     } catch {
@@ -202,56 +204,56 @@ export default function AssistantDetail() {
       name: "HTML",
       icon: "🌐",
       language: "html",
-      code: `<!-- Paste before </body> tag -->\n<script src="https://ai-employee-rho.vercel.app/widget.js" \n  data-id="${id}"></script>`,
+      code: `<!-- Paste before </body> tag -->\n<script src="https://ai-employee-rho.vercel.app/widget.js" \n  data-id="${embedId}"></script>`,
       instructions: "Open your HTML file, find the closing </body> tag, paste this code just before it.",
     },
     react: {
       name: "React",
       icon: "⚛️",
       language: "jsx",
-      code: `// In your App.jsx or index.jsx, add inside useEffect:\nuseEffect(() => {\n  const script = document.createElement('script');\n  script.src = 'https://ai-employee-rho.vercel.app/widget.js';\n  script.setAttribute('data-id', '${id}');\n  document.body.appendChild(script);\n}, []);`,
+      code: `// In your App.jsx or index.jsx, add inside useEffect:\nuseEffect(() => {\n  const script = document.createElement('script');\n  script.src = 'https://ai-employee-rho.vercel.app/widget.js';\n  script.setAttribute('data-id', '${embedId}');\n  document.body.appendChild(script);\n}, []);`,
       instructions: "Paste this in your root App.jsx component.",
     },
     nextjs: {
       name: "Next.js",
       icon: "▲",
       language: "jsx",
-      code: `// In app/layout.tsx or pages/_app.tsx\nimport Script from 'next/script'\n\n<Script \n  src="https://ai-employee-rho.vercel.app/widget.js"\n  data-id="${id}"\n  strategy="afterInteractive"\n/>`,
+      code: `// In app/layout.tsx or pages/_app.tsx\nimport Script from 'next/script'\n\n<Script \n  src="https://ai-employee-rho.vercel.app/widget.js"\n  data-id="${embedId}"\n  strategy="afterInteractive"\n/>`,
       instructions: "Add this to your root layout file. Requires next/script import.",
     },
     wordpress: {
       name: "WordPress",
       icon: "🔷",
       language: "html",
-      code: `<script src="https://ai-employee-rho.vercel.app/widget.js" \n  data-id="${id}"></script>`,
+      code: `<script src="https://ai-employee-rho.vercel.app/widget.js" \n  data-id="${embedId}"></script>`,
       instructions: 'Go to Appearance → Theme Editor → footer.php. Paste this code before </body>. Alternatively, install the plugin "Insert Headers and Footers" and paste in the Footer section.',
     },
     shopify: {
       name: "Shopify",
       icon: "🛒",
       language: "html",
-      code: `<script src="https://ai-employee-rho.vercel.app/widget.js" \n  data-id="${id}"></script>`,
+      code: `<script src="https://ai-employee-rho.vercel.app/widget.js" \n  data-id="${embedId}"></script>`,
       instructions: "Go to Online Store → Themes → Edit Code → theme.liquid. Paste before </body>.",
     },
     webflow: {
       name: "Webflow",
       icon: "🌀",
       language: "html",
-      code: `<script src="https://ai-employee-rho.vercel.app/widget.js" \n  data-id="${id}"></script>`,
+      code: `<script src="https://ai-employee-rho.vercel.app/widget.js" \n  data-id="${embedId}"></script>`,
       instructions: "Go to Project Settings → Custom Code → Footer Code. Paste this.",
     },
     wix: {
       name: "Wix",
       icon: "🔶",
       language: "html",
-      code: `<script src="https://ai-employee-rho.vercel.app/widget.js" \n  data-id="${id}"></script>`,
+      code: `<script src="https://ai-employee-rho.vercel.app/widget.js" \n  data-id="${embedId}"></script>`,
       instructions: "Go to Settings → Advanced → Custom Code → Add Code → Body. Paste this.",
     },
     vue: {
       name: "Vue.js",
       icon: "💚",
       language: "js",
-      code: `// In main.js or App.vue mounted():\nmounted() {\n  const script = document.createElement('script');\n  script.src = 'https://ai-employee-rho.vercel.app/widget.js';\n  script.setAttribute('data-id', '${id}');\n  document.body.appendChild(script);\n}`,
+      code: `// In main.js or App.vue mounted():\nmounted() {\n  const script = document.createElement('script');\n  script.src = 'https://ai-employee-rho.vercel.app/widget.js';\n  script.setAttribute('data-id', '${embedId}');\n  document.body.appendChild(script);\n}`,
       instructions: "Paste this in your main.js or App.vue mounted() hook.",
     },
   };
@@ -522,7 +524,7 @@ export default function AssistantDetail() {
               </div>
 
               <button
-                onClick={() => window.open(`https://ai-employee-rho.vercel.app/chat/${id}`, "_blank")}
+                onClick={() => window.open(`https://ai-employee-rho.vercel.app/chat/${embedId}`, "_blank")}
                 className="flex items-center gap-2 w-full justify-center py-2.5 bg-primary/20 text-primary rounded-lg hover:bg-primary/30 transition-colors text-sm font-medium"
               >
                 <ExternalLink className="h-4 w-4" /> Test your widget
@@ -534,17 +536,17 @@ export default function AssistantDetail() {
               <div className="flex items-center gap-2 mb-4">
                 <input
                   readOnly
-                  value={`https://ai-employee-rho.vercel.app/chat/${id}`}
+                  value={`https://ai-employee-rho.vercel.app/chat/${embedId}`}
                   className="flex-1 bg-black/40 border border-white/10 text-white text-sm px-3 py-2 rounded-lg font-mono"
                 />
                 <button
-                  onClick={() => copyText(`https://ai-employee-rho.vercel.app/chat/${id}`, "Link copied")}
+                  onClick={() => copyText(`https://ai-employee-rho.vercel.app/chat/${embedId}`, "Link copied")}
                   className="flex items-center gap-2 px-4 py-2 bg-primary/20 text-primary rounded-lg hover:bg-primary/30 transition-colors text-sm font-medium shrink-0"
                 >
                   <Copy className="h-4 w-4" /> Copy Link
                 </button>
                 <button
-                  onClick={() => window.open(`https://ai-employee-rho.vercel.app/chat/${id}`, "_blank")}
+                onClick={() => window.open(`https://ai-employee-rho.vercel.app/chat/${embedId}`, "_blank")}
                   className="flex items-center gap-2 px-4 py-2 bg-primary/20 text-primary rounded-lg hover:bg-primary/30 transition-colors text-sm font-medium shrink-0"
                 >
                   <ExternalLink className="h-4 w-4" /> Open

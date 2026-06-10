@@ -31,22 +31,22 @@ export const api = {
 
   // Assistants
   listAssistants: () => apiFetch<any[]>("/api/assistants"),
-  getAssistant: (id: number) => apiFetch<any>(`/api/assistants/${id}`),
+  getAssistant: (id: string | number) => apiFetch<any>(`/api/assistants/${id}`),
   createAssistant: (data: any) =>
     apiFetch<any>("/api/assistants", { method: "POST", body: JSON.stringify(data) }),
-  updateAssistant: (id: number, data: any) =>
+  updateAssistant: (id: string | number, data: any) =>
     apiFetch<any>(`/api/assistants/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   // Assistant Knowledge
-  listAssistantKnowledge: (assistantId: number) =>
+  listAssistantKnowledge: (assistantId: string | number) =>
     apiFetch<any[]>(`/api/assistants/${assistantId}/knowledge`),
-  createAssistantKnowledge: (assistantId: number, data: any) =>
+  createAssistantKnowledge: (assistantId: string | number, data: any) =>
     apiFetch<any>(`/api/assistants/${assistantId}/knowledge`, { method: "POST", body: JSON.stringify(data) }),
   deleteKnowledge: (id: number) =>
     apiFetch<void>(`/api/knowledge/${id}`, { method: "DELETE" }),
 
   // Conversations
-  listConversations: (assistantId?: number) =>
+  listConversations: (assistantId?: string | number) =>
     apiFetch<any[]>(assistantId ? `/api/conversations?assistantId=${assistantId}` : "/api/conversations"),
   getConversation: (id: number) => apiFetch<any>(`/api/conversations/${id}`),
   createConversation: (data: any) =>
@@ -55,12 +55,12 @@ export const api = {
     apiFetch<any[]>(`/api/conversations/${conversationId}/messages`),
 
   // Leads
-  listLeads: (assistantId?: number) =>
+  listLeads: (assistantId?: string | number) =>
     apiFetch<any[]>(assistantId ? `/api/leads?assistantId=${assistantId}` : "/api/leads"),
   createLead: (data: any) => apiFetch<any>("/api/leads", { method: "POST", body: JSON.stringify(data) }),
 
   // Appointments
-  listAppointments: (assistantId?: number) =>
+  listAppointments: (assistantId?: string | number) =>
     apiFetch<any[]>(assistantId ? `/api/appointments?assistantId=${assistantId}` : "/api/appointments"),
 
   // Subscriptions
@@ -70,9 +70,9 @@ export const api = {
   listKnowledge: () => apiFetch<any[]>("/api/knowledge"),
   createKnowledge: (data: any) =>
     apiFetch<any>("/api/knowledge", { method: "POST", body: JSON.stringify(data) }),
-  uploadKnowledge: (data: { assistantId: number; fileName: string; fileData: string; fileType: string }) =>
+  uploadKnowledge: (data: { assistantId: string | number; fileName: string; fileData: string; fileType: string }) =>
     apiFetch<any>("/api/knowledge/upload", { method: "POST", body: JSON.stringify(data) }),
-  crawlKnowledge: (data: { assistantId: number; url: string }) =>
+  crawlKnowledge: (data: { assistantId: string | number; url: string }) =>
     apiFetch<any>("/api/knowledge/crawl", { method: "POST", body: JSON.stringify(data) }),
 
   // Marketplace

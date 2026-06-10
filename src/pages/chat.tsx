@@ -1,105 +1,152 @@
-import { useRef, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useParams, Link } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { MessageSquare, ArrowLeft, Activity } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
-import { api } from "@/lib/api";
+import { useState, useRef, useEffect } from "react";
+import { useParams } from "wouter";
+import { Bot, Send, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
 
-export default function ChatDetail() {
+export default function ChatPage() {
   const params = useParams();
-  const id = params?.id;
+  const assistantId = params?.id;
+  const [assistant, setAssistant] = useState<any>(null);
+  const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const { data: conversation, isLoading, error } = useQuery({
-    queryKey: ["conversation", id],
-    queryFn: () => api.getConversation(Number(id)),
-    enabled: !!id,
-  });
+  const loadAssistant = () => {
+    if (!assistantId) return;
+    setLoading(true);
+    setError(null);
+    fetch(`/api/widget?assistantId=${assistantId}`)
+      .then(r => {
+        if (!r.ok) throw new Error(`Failed to load assistant (${r.status})`);
+        return r.json();
+      })
+      .then(data => {
+        setAssistant(data);
+        setMessages([{ role: "assistant", content: data.config?.welcomeMessage || `Hi! I'm ${data.name}. How can I help you today?` }]);
+      })
+      .catch(err => {
+        setError(err.message || "Failed to load assistant");
+      })
+      .finally(() => setLoading(false));
+  };
 
-  const { data: messages } = useQuery({
-    queryKey: ["messages", id],
-    queryFn: () => api.listMessages(Number(id)),
-    enabled: !!id,
-  });
+  useEffect(() => {
+    loadAssistant();
+  }, [assistantId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  const sendMessage = async () => {
+    if (!input.trim() || sending) return;
+    const msg = input.trim();
+    setInput("");
+    setMessages(prev => [...prev, { role: "user", content: msg }]);
+    setSending(true);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assistantId, message: msg }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(prev => [...prev, { role: "assistant", content: data.reply }]);
+      } else {
+        const errData = await res.json().catch(() => ({ error: "Request failed" }));
+        setMessages(prev => [...prev, { role: "assistant", content: errData.error || "Sorry, I couldn't process that. Please try again." }]);
+      }
+    } catch {
+      setMessages(prev => [...prev, { role: "assistant", content: "Connection error. Please check your internet and try again." }]);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-[50vh]">
-        <Activity className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-bold text-white mb-2">Conversation not found</h2>
-        <Link href="/conversations">
-          <Button variant="outline" className="border-primary text-primary">Back to Conversations</Button>
-        </Link>
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="bg-white/5 border border-red-500/30 rounded-2xl p-8 max-w-md w-full text-center">
+          <AlertTriangle className="h-12 w-12 text-red-400 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-white mb-2">Unable to load chat</h2>
+          <p className="text-muted-foreground text-sm mb-6">{error}</p>
+          <button
+            onClick={loadAssistant}
+            className="inline-flex items-center gap-2 bg-primary text-black px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            <RefreshCw className="h-4 w-4" /> Retry
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center gap-4">
-        <Link href="/conversations">
-          <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-white">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">
-            {isLoading ? <Skeleton className="h-8 w-48 bg-white/10" /> : conversation?.assistantName || "Conversation"}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {conversation?.userEmail || "Chat history"}
-          </p>
+    <div className="min-h-screen bg-background flex flex-col">
+      <div className="flex-1 max-w-2xl w-full mx-auto p-4 flex flex-col" style={{ maxHeight: "100dvh" }}>
+        <div className="flex items-center gap-3 py-4 border-b border-white/10 mb-4">
+          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+            <Bot className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-white font-semibold">{assistant?.name || "AI Assistant"}</h1>
+            <p className="text-xs text-muted-foreground">Online</p>
+          </div>
         </div>
-      </div>
 
-      <Card className="bg-white/5 border-white/10">
-        <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2">
-            <MessageSquare className="h-5 w-5 text-primary" />
-            Messages
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-4">
-              {[1, 2, 3].map(i => (
-                <div key={i} className={`flex ${i % 2 === 0 ? "justify-end" : "justify-start"}`}>
-                  <Skeleton className={`h-16 bg-white/10 ${i % 2 === 0 ? "w-2/3" : "w-1/2"}`} />
-                </div>
-              ))}
+        <div className="flex-1 overflow-y-auto space-y-4 mb-4 px-1">
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                msg.role === "user"
+                  ? "bg-primary text-black rounded-br-md"
+                  : "bg-white/10 text-white rounded-bl-md"
+              }`}>
+                {msg.content}
+              </div>
             </div>
-          ) : messages?.length === 0 ? (
-            <div className="text-center py-12">
-              <MessageSquare className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-              <p className="text-muted-foreground">No messages in this conversation.</p>
-            </div>
-          ) : (
-            <div className="space-y-4 max-h-[60vh] overflow-y-auto">
-              {messages?.map((msg: any) => (
-                <div key={msg.id} className={`flex ${msg.role === "assistant" ? "justify-start" : "justify-end"}`}>
-                  <div className={`max-w-[75%] rounded-xl px-4 py-3 ${
-                    msg.role === "assistant"
-                      ? "bg-primary/10 border border-primary/20 text-white"
-                      : "bg-white/10 border border-white/10 text-white"
-                  }`}>
-                    <p className="text-xs text-muted-foreground mb-1">
-                      {msg.role === "assistant" ? "AI Assistant" : "User"}
-                    </p>
-                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                  </div>
-                </div>
-              ))}
-              <div ref={bottomRef} />
+          ))}
+          {sending && (
+            <div className="flex justify-start">
+              <div className="bg-white/10 rounded-2xl px-4 py-3">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+          <div ref={bottomRef} />
+        </div>
+
+        <form
+          onSubmit={(e) => { e.preventDefault(); sendMessage(); }}
+          className="flex gap-2 pb-4"
+        >
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Type your message..."
+            className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-primary/50 transition-colors"
+            disabled={sending}
+          />
+          <button
+            type="submit"
+            disabled={!input.trim() || sending}
+            className="bg-primary text-black rounded-xl px-4 py-3 hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            <Send className="h-4 w-4" />
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

@@ -261,7 +261,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json(data);
     }
 
-    const assistantMatch = path.match(/^\/api\/assistants\/(\d+)$/);
+    const assistantMatch = path.match(/^\/api\/assistants\/([a-f0-9-]+)$/);
     if (assistantMatch) {
       const id = assistantMatch[1];
       if (req.method === 'GET') {
@@ -292,7 +292,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // ---- ASSISTANT KNOWLEDGE ----
-    const assistantKnowledgeMatch = path.match(/^\/api\/assistants\/(\d+)\/knowledge$/);
+    const assistantKnowledgeMatch = path.match(/^\/api\/assistants\/([a-f0-9-]+)\/knowledge$/);
     if (assistantKnowledgeMatch) {
       const assistantId = assistantKnowledgeMatch[1];
       if (req.method === 'GET') {
@@ -309,7 +309,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!userId) return;
         const { data: assistant } = await supabase.from('assistants').select('id').eq('id', assistantId).eq('user_id', userId).single();
         if (!assistant) return res.status(404).json({ error: 'Assistant not found' });
-        const { data, error } = await supabase.from('knowledge').insert({ ...req.body, user_id: userId, assistant_id: parseInt(assistantId) }).select().single();
+        const { data, error } = await supabase.from('knowledge').insert({ ...req.body, user_id: userId, assistant_id: assistantId }).select().single();
         if (error) return res.status(500).json({ error: error.message });
         return res.json(data);
       }
@@ -353,7 +353,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const title = fileName.replace(/\.(txt|pdf|docx)$/i, '');
       const { data, error } = await supabase.from('knowledge').insert({
         user_id: userId,
-        assistant_id: assistantId ? parseInt(assistantId) : null,
+        assistant_id: assistantId || null,
         title,
         content: text || '(empty file)',
         type: 'file',
@@ -405,7 +405,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           const { data, error } = await supabase.from('knowledge').insert({
             user_id: userId,
-            assistant_id: assistantId ? parseInt(assistantId) : null,
+            assistant_id: assistantId || null,
             title: pageTitle,
             content: fallback,
             type: 'crawl',
@@ -417,7 +417,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const { data, error } = await supabase.from('knowledge').insert({
           user_id: userId,
-          assistant_id: assistantId ? parseInt(assistantId) : null,
+          assistant_id: assistantId || null,
           title: pageTitle,
           content: content || '(empty page)',
           type: 'crawl',
